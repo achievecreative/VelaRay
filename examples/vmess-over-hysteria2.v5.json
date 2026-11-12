@@ -1,0 +1,19 @@
+{
+  "log": { "error": { "type": "Console", "level": "Warning" } },
+  "inbounds": [
+    { "protocol": "socks", "listen": "127.0.0.1", "port": 1080, "settings": { "udpEnabled": true } },
+    { "protocol": "http", "listen": "127.0.0.1", "port": 1088, "settings": {} }
+  ],
+  "outbounds": [
+    {
+      "tag": "proxy", "protocol": "vmess",
+      "settings": { "address": "hy2.example.com", "port": 443, "uuid": "934d4533-a99b-4d9e-981f-2d7b9497f088" },
+      "streamSettings": {
+        "transport": "hysteria2",
+        "transportSettings": { "password": "REPLACE_ME", "congestion": { "type": "bbr" }, "use_udp_extension": true },
+        "security": "tls", "securitySettings": { "serverName": "hy2.example.com" }
+      }
+    },
+    { "tag": "direct", "protocol": "freedom", "settings": {} }
+  ]
+}

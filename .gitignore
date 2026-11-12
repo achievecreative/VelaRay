@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+.vs/
+*.user
+.vscode/
+*.log
+settings.v5.json
+config.v5.json
+
+# Bundled official core payload is resolved and verified at publish time
+payload/
+publish/

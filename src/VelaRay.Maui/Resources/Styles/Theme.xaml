@@ -1,0 +1,129 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<ResourceDictionary xmlns="http://schemas.microsoft.com/dotnet/2021/maui" xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml">
+  <!-- Runtime-independent native font fallback. Windows retains the heavier YaHei UI font. -->
+  <OnPlatform x:Key="AppUiFontFamily" x:TypeArguments="x:String" Default="">
+    <On Platform="WinUI" Value="Microsoft YaHei UI"/>
+    <On Platform="MacCatalyst" Value="PingFang SC"/>
+  </OnPlatform>
+  <OnPlatform x:Key="AppCodeFontFamily" x:TypeArguments="x:String" Default="monospace">
+    <On Platform="WinUI" Value="Consolas"/>
+    <On Platform="MacCatalyst" Value="Menlo"/>
+  </OnPlatform>
+  <Style x:Key="WorkspaceTitleStyle" TargetType="Label">
+    <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/><Setter Property="FontSize" Value="24"/><Setter Property="FontAttributes" Value="Bold"/>
+    <Setter Property="TextColor" Value="{AppThemeBinding Light=#15263F, Dark=#F1F5F9}"/>
+  </Style>
+  <Style x:Key="SectionTitleStyle" TargetType="Label">
+    <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/><Setter Property="FontSize" Value="17"/><Setter Property="FontAttributes" Value="Bold"/>
+  </Style>
+  <Style x:Key="EyebrowLabelStyle" TargetType="Label">
+    <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/><Setter Property="FontSize" Value="12"/><Setter Property="FontAttributes" Value="Bold"/>
+    <Setter Property="TextColor" Value="{AppThemeBinding Light=#465A73, Dark=#B9C9DF}"/>
+  </Style>
+  <Style x:Key="HintLabelStyle" TargetType="Label">
+    <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/><Setter Property="FontSize" Value="13"/>
+    <Setter Property="TextColor" Value="{AppThemeBinding Light=#475B72, Dark=#C2D1E4}"/>
+  </Style>
+  <Style x:Key="FieldLabelStyle" TargetType="Label">
+    <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/><Setter Property="FontSize" Value="13"/>
+    <Setter Property="TextColor" Value="{AppThemeBinding Light=#394B62, Dark=#D5DFEB}"/>
+  </Style>
+  <!-- Connected-state badge and large mode selections are visual only. -->
+  <Style x:Key="ConnectionPillStyle" TargetType="Border">
+    <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#ECF3FF, Dark=#243A54}"/>
+    <Setter Property="Stroke" Value="{AppThemeBinding Light=#D0DFF8, Dark=#47648A}"/>
+    <Setter Property="StrokeThickness" Value="1"/>
+    <Setter Property="StrokeShape" Value="RoundRectangle 20"/>
+    <Setter Property="Padding" Value="12,7"/>
+  </Style>
+  <Style x:Key="ProxyModeChoiceCardStyle" TargetType="Border">
+    <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#FAFCFF, Dark=#1A293E}"/>
+    <Setter Property="Stroke" Value="{AppThemeBinding Light=#DDE6F2, Dark=#40536D}"/>
+    <Setter Property="StrokeThickness" Value="1.5"/>
+    <Setter Property="StrokeShape" Value="RoundRectangle 12"/>
+    <Setter Property="Padding" Value="14,12"/>
+    <Setter Property="MinimumHeightRequest" Value="120"/>
+  </Style>
+  <Style x:Key="SurfaceCardStyle" TargetType="Border">
+    <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#FFFFFF, Dark=#172233}"/>
+    <Setter Property="Stroke" Value="{AppThemeBinding Light=#E1E8F0, Dark=#334155}"/>
+    <Setter Property="StrokeThickness" Value="1"/>
+    <Setter Property="StrokeShape" Value="RoundRectangle 16"/>
+    <Setter Property="Padding" Value="18"/>
+  </Style>
+  <Style x:Key="GlobalScopeCardStyle" TargetType="Border">
+    <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#E7F1FF, Dark=#1E3554}"/>
+    <Setter Property="Stroke" Value="{AppThemeBinding Light=#BDD4F7, Dark=#45658C}"/>
+    <Setter Property="StrokeThickness" Value="1"/>
+    <Setter Property="StrokeShape" Value="RoundRectangle 12"/>
+    <Setter Property="Padding" Value="14"/>
+  </Style>
+  <Style x:Key="InnerCardStyle" TargetType="Border">
+    <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#F5F8FD, Dark=#1D2B40}"/>
+    <Setter Property="Stroke" Value="{AppThemeBinding Light=#E2EAF4, Dark=#40516A}"/>
+    <Setter Property="StrokeThickness" Value="1"/>
+    <Setter Property="StrokeShape" Value="RoundRectangle 12"/>
+    <Setter Property="Padding" Value="14"/>
+  </Style>
+  <Style TargetType="Button">
+    <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/><Setter Property="CornerRadius" Value="9"/>
+    <Setter Property="Padding" Value="13,8"/>
+    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#EDF2FA, Dark=#293A53}"/>
+    <Setter Property="TextColor" Value="{AppThemeBinding Light=#21344E, Dark=#E5E7EB}"/>
+  </Style>
+  <Style x:Key="PrimaryButtonStyle" TargetType="Button">
+    <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/><Setter Property="CornerRadius" Value="9"/>
+    <Setter Property="Padding" Value="16,9"/>
+    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="BackgroundColor" Value="#2B67C7"/>
+    <Setter Property="TextColor" Value="White"/>
+    <Setter Property="FontAttributes" Value="Bold"/>
+  </Style>
+  <Style x:Key="SecondaryButtonStyle" TargetType="Button">
+    <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/><Setter Property="CornerRadius" Value="9"/>
+    <Setter Property="Padding" Value="13,8"/>
+    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#E8EFF9, Dark=#2A3C55}"/>
+    <Setter Property="TextColor" Value="{AppThemeBinding Light=#24456E, Dark=#DCEAFB}"/>
+  </Style>
+  <Style x:Key="DangerButtonStyle" TargetType="Button">
+    <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/><Setter Property="CornerRadius" Value="9"/>
+    <Setter Property="Padding" Value="13,8"/>
+    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#FCE9EC, Dark=#502A39}"/>
+    <Setter Property="TextColor" Value="{AppThemeBinding Light=#B4233C, Dark=#FFB4C2}"/>
+  </Style>
+  <Style x:Key="NavigationButtonStyle" TargetType="Button">
+    <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/><Setter Property="CornerRadius" Value="9"/>
+    <Setter Property="Padding" Value="14,11"/>
+    <Setter Property="HorizontalOptions" Value="Fill"/>
+    <Setter Property="BackgroundColor" Value="Transparent"/>
+    <Setter Property="TextColor" Value="{AppThemeBinding Light=#334155, Dark=#CBD5E1}"/>
+    <Setter Property="FontSize" Value="13"/>
+  </Style>
+  <Style x:Key="SmallButtonStyle" TargetType="Button">
+    <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/><Setter Property="CornerRadius" Value="8"/>
+    <Setter Property="Padding" Value="8,5"/>
+    <Setter Property="FontSize" Value="13"/>
+    <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#EDF2F9, Dark=#293A53}"/>
+    <Setter Property="TextColor" Value="{AppThemeBinding Light=#314760, Dark=#E5E7EB}"/>
+  </Style>
+  <Style TargetType="Label">
+    <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/><Setter Property="TextColor" Value="{AppThemeBinding Light=#27374C, Dark=#E5EAF2}"/>
+  <Setter Property="FontSize" Value="13"/></Style>
+  <Style TargetType="Entry">
+    <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/><Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#F7F9FD, Dark=#233248}"/>
+    <Setter Property="TextColor" Value="{AppThemeBinding Light=#15263F, Dark=#F8FAFC}"/>
+  </Style>
+  <Style TargetType="Editor">
+    <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/><Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#F7F9FD, Dark=#233248}"/>
+    <Setter Property="TextColor" Value="{AppThemeBinding Light=#15263F, Dark=#F8FAFC}"/>
+  </Style>
+  <Style TargetType="Picker">
+    <Setter Property="HorizontalOptions" Value="Fill"/>
+    <Setter Property="FontSize" Value="14"/>
+    <Setter Property="FontFamily" Value="{StaticResource AppUiFontFamily}"/><Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#F7F9FD, Dark=#233248}"/>
+    <Setter Property="TextColor" Value="{AppThemeBinding Light=#15263F, Dark=#F8FAFC}"/>
+  </Style>
+</ResourceDictionary>

@@ -1,0 +1,63 @@
+name: VelaRay Windows .NET 10 validation & portable EXE
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Static consistency checks
+        run: python scripts/static_check.py
+      - name: UI scope, locale and native titlebar checks
+        run: python scripts/audit_ux_localization.py
+      - name: C# structural sanity (not substitute for compiler)
+        run: python scripts/check_csharp_structure.py
+      - name: Workspace UX and desktop platform boundaries
+        run: python scripts/check_workspace_and_platform.py
+      - name: Unified connection action and V2Fly core-update checks
+        run: python scripts/check_core_updates_and_connection_action.py
+      - name: Connection selection behavior regression
+        run: python scripts/check_connection_selection.py
+      - name: PAC JavaScript checks
+        run: python scripts/check_pac_js.py
+      - name: Ten-round independent source review gates
+        run: python scripts/ten_round_audit.py
+      - name: Single-instance, semantic keys and visual routing review
+        run: python scripts/review_semantic_singleinstance_routing.py
+      - name: Smart routing source-contract review
+        run: python scripts/check_smart_routing_contract.py
+      - name: Smart Proxy fallback and managed PAC suffix checks
+        run: python scripts/check_smart_proxy_pac_sync.py
+      - name: Install MAUI Windows workload
+        run: dotnet workload install maui-windows
+      - name: Restore core tests
+        run: dotnet restore tests/VelaRay.SmokeTests/VelaRay.SmokeTests.csproj
+      - name: Run V4/V5 and persistence tests
+        run: dotnet run --project tests/VelaRay.SmokeTests/VelaRay.SmokeTests.csproj -c Release
+      - name: Windows Job Object lifecycle regression (including force-kill)
+        run: dotnet run --project tests/VelaRay.WindowsLifetimeTests/VelaRay.WindowsLifetimeTests.csproj -c Release
+      - name: Restore Windows MAUI app
+        run: dotnet restore src/VelaRay.Maui/VelaRay.Maui.csproj -p:TargetFramework=net10.0-windows10.0.19041.0
+      - name: Build Windows MAUI client (Debug; fail on C# or XAML errors)
+        run: dotnet build src/VelaRay.Maui/VelaRay.Maui.csproj -c Debug -f net10.0-windows10.0.19041.0 --no-restore
+      - name: Build Windows MAUI client (Release; fail on C# or XAML errors)
+        run: dotnet build src/VelaRay.Maui/VelaRay.Maui.csproj -c Release -f net10.0-windows10.0.19041.0 --no-restore
+      - name: Publish and verify standalone single-file VelaRay.exe
+        shell: pwsh
+        run: ./scripts/publish-windows.ps1 -Mode SingleFile
+      - uses: actions/upload-artifact@v4
+        with:
+          name: VelaRay-Windows-x64-single-exe
+          path: publish/VelaRay-win-x64.exe
+          if-no-files-found: error

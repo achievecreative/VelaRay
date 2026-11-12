@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="src/VelaRay.Core/VelaRay.Core.csproj" />
+  <Project Path="src/VelaRay.Maui/VelaRay.Maui.csproj" />
+  <Project Path="tests/VelaRay.SmokeTests/VelaRay.SmokeTests.csproj" />
+  <Project Path="tests/VelaRay.WindowsLifetimeTests/VelaRay.WindowsLifetimeTests.csproj" />
+</Solution>

@@ -1,0 +1,22 @@
+{
+  "log": {
+    "access": { "type": "None" },
+    "error": { "type": "Console", "level": "Warning" }
+  },
+  "inbounds": [
+    { "protocol": "socks", "listen": "127.0.0.1", "port": 1080,
+      "settings": { "udpEnabled": true, "address": "127.0.0.1", "packetEncoding": "Packet" } },
+    { "protocol": "http", "listen": "127.0.0.1", "port": 1088, "settings": {} }
+  ],
+  "outbounds": [
+    { "tag": "proxy", "protocol": "hysteria2",
+      "settings": { "server": [ { "address": "hy2.example.com", "port": 443 } ] },
+      "streamSettings": {
+        "transport": "hysteria2",
+        "transportSettings": { "password": "REPLACE_ME", "congestion": { "type": "bbr" }, "use_udp_extension": true },
+        "security": "tls", "securitySettings": { "serverName": "hy2.example.com" }
+      }
+    },
+    { "tag": "direct", "protocol": "freedom", "settings": {} }
+  ]
+}

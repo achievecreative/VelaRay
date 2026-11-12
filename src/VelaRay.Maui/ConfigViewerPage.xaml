@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui" xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml" xmlns:loc="clr-namespace:VelaRay.Maui.Localization" x:Class="VelaRay.Maui.ConfigViewerPage" Title="{Binding [ConfigViewerTitle], Source={x:Static loc:UiStrings.Instance}}">
+  <Grid Padding="18" RowDefinitions="Auto,Auto,Auto,*,Auto" RowSpacing="10">
+    <Label x:Name="CaptionLabel" FontSize="20" FontAttributes="Bold"/>
+    <Label Grid.Row="1" x:Name="DescriptionLabel" FontSize="12" TextColor="#576B7F"/>
+    <VerticalStackLayout Grid.Row="2" Spacing="4">
+      <Label Text="{Binding [ConfigViewerFilePath], Source={x:Static loc:UiStrings.Instance}}" FontSize="12" FontAttributes="Bold"/>
+      <Label x:Name="ConfigPathLabel" FontSize="12" TextColor="#66788A" LineBreakMode="CharacterWrap"/>
+      <HorizontalStackLayout Spacing="10">
+        <Switch x:Name="FormatSwitch" IsToggled="True" Toggled="FormatChanged"/>
+        <Label Text="{Binding [ConfigViewerPrettyPrint], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center" FontSize="12"/>
+      </HorizontalStackLayout>
+    </VerticalStackLayout>
+    <!-- Keep the JSON display bounded to the star-sized row. The read-only label
+         expands vertically inside ScrollView without resizing the modal window. -->
+    <Border Grid.Row="3" Stroke="#CCD6E0" StrokeThickness="1" StrokeShape="RoundRectangle 6" Padding="0" VerticalOptions="Fill" HorizontalOptions="Fill">
+      <ScrollView x:Name="ConfigScrollView" Orientation="Vertical"
+                  VerticalScrollBarVisibility="Always"
+                  HorizontalOptions="Fill" VerticalOptions="Fill" BackgroundColor="White">
+        <Label x:Name="ConfigTextLabel" Padding="10" FontFamily="{StaticResource AppCodeFontFamily}" FontSize="12"
+               LineBreakMode="CharacterWrap" HorizontalOptions="Fill" VerticalOptions="Start"
+               BackgroundColor="White" TextColor="#1F2937"/>
+      </ScrollView>
+    </Border>
+    <Grid Grid.Row="4" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="8">
+      <Button Text="{Binding [ActionCopyRawJson], Source={x:Static loc:UiStrings.Instance}}" Clicked="CopyClicked" ImageSource="action_copy_neutral.png" ContentLayout="Left,6"/>
+      <Button Grid.Column="1" Text="{Binding [ActionRevealInExplorer], Source={x:Static loc:UiStrings.Instance}}" Clicked="RevealClicked" ImageSource="action_folder_open_neutral.png" ContentLayout="Left,6"/>
+      <Label Grid.Column="2" Text="{Binding [HelpSensitiveConfig], Source={x:Static loc:UiStrings.Instance}}" TextColor="#996B20" FontSize="11" VerticalOptions="Center" LineBreakMode="WordWrap"/>
+      <Button Grid.Column="3" Text="{Binding [ActionClose], Source={x:Static loc:UiStrings.Instance}}" Clicked="CloseClicked" ImageSource="action_x_neutral.png" ContentLayout="Left,6"/>
+    </Grid>
+  </Grid>
+</ContentPage>

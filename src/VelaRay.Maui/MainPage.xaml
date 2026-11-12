@@ -1,0 +1,744 @@
+<?xml version='1.0' encoding='UTF-8'?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui" xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml" xmlns:models="clr-namespace:VelaRay.Core.Models;assembly=VelaRay.Core" xmlns:loc="clr-namespace:VelaRay.Maui.Localization" x:Class="VelaRay.Maui.MainPage" BackgroundColor="{AppThemeBinding Light=#F4F7FB, Dark=#101722}" Title="VelaRay">
+  <Grid ColumnDefinitions="336,*" RowDefinitions="Auto,*,206" ColumnSpacing="0" RowSpacing="0">
+    <!-- Top-level app bar: always available even when editing an advanced section. -->
+    <Border Grid.ColumnSpan="2" BackgroundColor="{AppThemeBinding Light=#FFFFFF, Dark=#172233}" Stroke="{AppThemeBinding Light=#E2E8F0, Dark=#334155}" StrokeThickness="1">
+      <!-- Keep brand identity on the left and primary actions at the far right of the top toolbar.
+           The selected editor profile and actual running profile are independent. -->
+      <Grid ColumnDefinitions="Auto,*,230,150,Auto" ColumnSpacing="12" Padding="18,8">
+        <Image Grid.Column="0" Source="velaray_logo.png" HeightRequest="46" WidthRequest="46" Aspect="AspectFit" SemanticProperties.Description="VelaRay logo" VerticalOptions="Center"/>
+        <Label Grid.Column="1" Text="VelaRay" FontSize="23" FontAttributes="Bold" VerticalOptions="Center" TextColor="{AppThemeBinding Light=#15263F, Dark=#F1F5F9}"/>
+        <!-- Status pill reads actual runner state, never the selected editor profile. -->
+        <Border Grid.Column="2" Style="{StaticResource ConnectionPillStyle}" WidthRequest="230"
+                SemanticProperties.Description="{Binding [HeaderCurrentServer], Source={x:Static loc:UiStrings.Instance}}">
+          <Grid ColumnDefinitions="10,*,Auto" ColumnSpacing="9" VerticalOptions="Center">
+            <Border Grid.Column="0" x:Name="TopConnectionDot" HeightRequest="9" WidthRequest="9"
+                    BackgroundColor="#94A3B8" StrokeThickness="0" StrokeShape="RoundRectangle 5"
+                    VerticalOptions="Center"/>
+            <VerticalStackLayout Grid.Column="1" Spacing="1">
+              <Label Text="{Binding [HeaderCurrentServer], Source={x:Static loc:UiStrings.Instance}}"
+                     FontSize="10" TextColor="{AppThemeBinding Light=#61738D, Dark=#BDD1E8}"/>
+              <Label x:Name="ActiveNodeLabel" Text="—" FontAttributes="Bold" FontSize="13"
+                     LineBreakMode="TailTruncation" MaxLines="1"/>
+            </VerticalStackLayout>
+            <Label Grid.Column="2" x:Name="TopConnectionStateLabel" Text="未连接"
+                   FontSize="11" FontAttributes="Bold" VerticalOptions="Center"
+                   TextColor="{AppThemeBinding Light=#3C617B, Dark=#B5CBDD}"
+                   AutomationId="connection-status-top"/>
+          </Grid>
+        </Border>
+        <!-- Reference design: a compact globe-led segmented language control. -->
+        <VerticalStackLayout Grid.Column="3" WidthRequest="150" VerticalOptions="Center" Spacing="3">
+          <Border BackgroundColor="{AppThemeBinding Light=#E4EAF8, Dark=#293A53}"
+                  Stroke="{AppThemeBinding Light=#D4DDEE, Dark=#435672}"
+                  StrokeThickness="1" StrokeShape="RoundRectangle 24" Padding="4,3">
+            <Grid ColumnDefinitions="24,*,*" ColumnSpacing="2" HeightRequest="34" VerticalOptions="Center">
+              <!-- Vector globe; no font emoji or platform-specific image dependency. -->
+              <Grid Grid.Column="0" WidthRequest="22" HeightRequest="22" VerticalOptions="Center" HorizontalOptions="Center">
+                <Ellipse HeightRequest="17" WidthRequest="17" HorizontalOptions="Center" VerticalOptions="Center"
+                         Stroke="{AppThemeBinding Light=#8290A4, Dark=#A9B9D4}" StrokeThickness="1.5" Fill="Transparent"/>
+                <Ellipse HeightRequest="17" WidthRequest="8" HorizontalOptions="Center" VerticalOptions="Center"
+                         Stroke="{AppThemeBinding Light=#8290A4, Dark=#A9B9D4}" StrokeThickness="1.3" Fill="Transparent"/>
+                <BoxView HeightRequest="1.4" WidthRequest="17" HorizontalOptions="Center" VerticalOptions="Center"
+                         Color="{AppThemeBinding Light=#8290A4, Dark=#A9B9D4}"/>
+              </Grid>
+              <Button x:Name="ChineseLanguageButton" Grid.Column="1" Text="中文" Clicked="ChineseLanguageClicked"
+                      AutomationId="language-zh" CornerRadius="18" Padding="3,3" FontSize="14"
+                      SemanticProperties.Description="切换为中文"/>
+              <Button x:Name="EnglishLanguageButton" Grid.Column="2" Text="EN" Clicked="EnglishLanguageClicked"
+                      AutomationId="language-en" CornerRadius="18" Padding="3,3" FontSize="14"
+                      SemanticProperties.Description="Switch to English"/>
+            </Grid>
+          </Border>
+        </VerticalStackLayout>
+        <!-- Primary actions belong to the top-right toolbar, NEVER below the logo/title. -->
+        <HorizontalStackLayout Grid.Column="4" VerticalOptions="Center" HorizontalOptions="End" Spacing="8">
+          <Button Text="{Binding [HeaderViewConfig], Source={x:Static loc:UiStrings.Instance}}" Clicked="ViewConfigClicked"
+                  Style="{StaticResource SecondaryButtonStyle}" WidthRequest="140" AutomationId="view-config" ImageSource="action_file_code_neutral.png" ContentLayout="Left,6"/>
+          <Button x:Name="HeaderConnectionButton" Text="{Binding [HeaderConnect], Source={x:Static loc:UiStrings.Instance}}" Clicked="ConnectionActionClicked"
+                  Style="{StaticResource PrimaryButtonStyle}" WidthRequest="156" AutomationId="connection-action-top" ImageSource="action_plug_primary.png" ContentLayout="Left,6"/>
+        </HorizontalStackLayout>
+      </Grid>
+    </Border>
+    <!-- Persistent navigation & profiles. No nested ScrollView/CollectionView. -->
+    <Border Grid.Row="1" BackgroundColor="{AppThemeBinding Light=#FFFFFF, Dark=#172233}" Stroke="{AppThemeBinding Light=#E2E8F0, Dark=#334155}" StrokeThickness="1">
+      <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto" Padding="16,18" RowSpacing="12">
+        <Label Text="{Binding [NavWorkspace], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource EyebrowLabelStyle}"/>
+        <VerticalStackLayout Grid.Row="1" Spacing="8">
+          <Button x:Name="SettingsNavButton" AutomationId="nav-proxy-settings" Text="{Binding [NavProxySettings], Source={x:Static loc:UiStrings.Instance}}" Clicked="ShowSettingsClicked" Style="{StaticResource NavigationButtonStyle}" ImageSource="action_sliders_neutral.png" ContentLayout="Left,6" HandlerChanged="NavigationButtonHandlerChanged" />
+          <Button x:Name="RoutingNavButton" AutomationId="nav-routing-pac" Text="{Binding [NavRoutingPac], Source={x:Static loc:UiStrings.Instance}}" Clicked="ShowRoutingClicked" Style="{StaticResource NavigationButtonStyle}" ImageSource="action_route_neutral.png" ContentLayout="Left,6" HandlerChanged="NavigationButtonHandlerChanged" />
+        </VerticalStackLayout>
+        <Grid Grid.Row="2" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6">
+          <Label Text="{Binding [NavServers], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource EyebrowLabelStyle}" VerticalOptions="Center"/>
+          <Button Grid.Column="1" x:Name="MeasureLatencyButton" Text="{Binding [ActionTestTcpLatency], Source={x:Static loc:UiStrings.Instance}}"
+                  Clicked="MeasureLatenciesClicked" Style="{StaticResource SmallButtonStyle}" Padding="8,5" FontSize="11"
+                  SemanticProperties.Description="{Binding [HelpTestTcpLatency], Source={x:Static loc:UiStrings.Instance}}" ImageSource="action_gauge_neutral.png" ContentLayout="Left,6"/>
+          <Button Grid.Column="2" Text="" Clicked="AddClicked" Style="{StaticResource SmallButtonStyle}" WidthRequest="34" HeightRequest="34" SemanticProperties.Description="{Binding [HelpAddServerTooltip], Source={x:Static loc:UiStrings.Instance}}" ImageSource="action_plus_neutral.png" ContentLayout="Left,6"/>
+        </Grid>
+        <!-- Selected card uses blue outline; running profile uses a separate left rail and check badge. -->
+        <CollectionView x:Name="ProfilesList" Grid.Row="3" ItemSizingStrategy="MeasureAllItems" SelectionMode="Single"
+                        SelectionChanged="ProfilesSelectionChanged" AutomationId="server-list">
+          <!-- Let the native CollectionView layout allocate the gap BETWEEN items.
+               Template margins did not produce reliable spacing in the WinUI list. -->
+          <CollectionView.ItemsLayout>
+            <LinearItemsLayout Orientation="Vertical" ItemSpacing="2"/>
+          </CollectionView.ItemsLayout>
+          <CollectionView.ItemTemplate>
+            <DataTemplate x:DataType="models:ServerProfile">
+              <!-- The 18dp empty column reserves ~8dp for an overlay scrollbar +
+                   at least 10dp visual clearance. It is OUTSIDE the card border. -->
+              <Grid ColumnDefinitions="*,10" HorizontalOptions="Fill">
+                <!-- CollectionView selection is applied to the template ROOT.
+                     Target its child card, preserving independent connected status. -->
+                <VisualStateManager.VisualStateGroups>
+                  <VisualStateGroup Name="CommonStates">
+                    <VisualState Name="Normal">
+                      <VisualState.Setters>
+                        <Setter TargetName="ProfileCardBorder" Property="Border.BackgroundColor" Value="{AppThemeBinding Light=#FFFFFF, Dark=#172233}"/>
+                        <Setter TargetName="ProfileCardBorder" Property="Border.Stroke" Value="{AppThemeBinding Light=#DCE4F2, Dark=#3C4C60}"/>
+                      </VisualState.Setters>
+                    </VisualState>
+                    <VisualState Name="Selected">
+                      <VisualState.Setters>
+                        <Setter TargetName="ProfileCardBorder" Property="Border.BackgroundColor" Value="{AppThemeBinding Light=#EDF3FF, Dark=#20324D}"/>
+                        <Setter TargetName="ProfileCardBorder" Property="Border.Stroke" Value="{AppThemeBinding Light=#4E68FF, Dark=#87A3FF}"/>
+                      </VisualState.Setters>
+                    </VisualState>
+                  </VisualStateGroup>
+                </VisualStateManager.VisualStateGroups>
+                <Border x:Name="ProfileCardBorder" Grid.Column="0"
+                        Stroke="{AppThemeBinding Light=#DCE4F2, Dark=#3C4C60}" StrokeThickness="1.5"
+                        StrokeShape="RoundRectangle 15" Padding="0" MinimumHeightRequest="78"
+                        BackgroundColor="{AppThemeBinding Light=#FFFFFF, Dark=#172233}">
+                  <Grid ColumnDefinitions="4,*" ColumnSpacing="0">
+                  <BoxView Grid.Column="0" IsVisible="{Binding IsConnected}" Color="{AppThemeBinding Light=#3152C6, Dark=#87A3FF}"/>
+                  <Grid Grid.Column="1" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="9"
+                        RowSpacing="6" Padding="12,11,12,11" VerticalOptions="Center">
+                    <!-- Name and address share the same left edge. The connected dot sits
+                         AFTER the flexible name column, so it does not indent only row one. -->
+                    <Grid Grid.Row="0" Grid.Column="0" ColumnDefinitions="*,Auto,Auto" ColumnSpacing="6" VerticalOptions="Center">
+                      <Label Grid.Column="0" Text="{Binding Name}" FontSize="14" FontAttributes="Bold"
+                             MaxLines="1" LineBreakMode="TailTruncation" VerticalOptions="Center"
+                             HorizontalOptions="Fill" HorizontalTextAlignment="Start"
+                             TextColor="{AppThemeBinding Light=#172A45, Dark=#F1F5F9}"/>
+                      <Border Grid.Column="1" IsVisible="{Binding IsConnected}" VerticalOptions="Center"
+                              HeightRequest="8" WidthRequest="8" BackgroundColor="#20B47B"
+                              StrokeThickness="0" StrokeShape="RoundRectangle 4"/>
+                      <Border Grid.Column="2" BackgroundColor="{AppThemeBinding Light=#E2E8FF, Dark=#304675}"
+                              StrokeThickness="0" StrokeShape="RoundRectangle 5" Padding="5,2" VerticalOptions="Center">
+                        <Label Text="{Binding ProtocolBadge}" FontSize="11" MaxLines="1"
+                               TextColor="{AppThemeBinding Light=#2E50C8, Dark=#A8BDFF}"/>
+                      </Border>
+                    </Grid>
+                    <Label Grid.Row="1" Grid.Column="0" Text="{Binding EndpointDisplay}" MaxLines="1"
+                           FontFamily="{StaticResource AppCodeFontFamily}" FontSize="12"
+                           LineBreakMode="MiddleTruncation" VerticalOptions="Center"
+                           HorizontalOptions="Fill" HorizontalTextAlignment="Start"
+                           TextColor="{AppThemeBinding Light=#63758B, Dark=#B6C7DC}"/>
+                    <VerticalStackLayout Grid.RowSpan="2" Grid.Column="1" Spacing="3" HorizontalOptions="End"
+                                         VerticalOptions="Center" MinimumWidthRequest="52">
+                      <!-- Never invent a latency: explicit TCP test populates this value. -->
+                      <Label Text="{Binding LatencyDisplay}" HorizontalTextAlignment="End" FontSize="11" TextColor="{AppThemeBinding Light=#418A6F, Dark=#8BC9A8}"/>
+                      <HorizontalStackLayout IsVisible="{Binding IsConnected}" HorizontalOptions="End" Spacing="5">
+                        <Border HeightRequest="16" WidthRequest="16" Stroke="#3159D6" StrokeThickness="1.7"
+                                StrokeShape="RoundRectangle 8" BackgroundColor="Transparent" Padding="0">
+                          <Label Text="✓" FontSize="10" TextColor="{AppThemeBinding Light=#3159D6, Dark=#9AB7FF}"
+                                 HorizontalOptions="Center" VerticalOptions="Center"/>
+                        </Border>
+                        <Label Text="{Binding [ServerRunningIndicatorShort], Source={x:Static loc:UiStrings.Instance}}"
+                               FontSize="11" TextColor="{AppThemeBinding Light=#3159D6, Dark=#9AB7FF}"
+                               VerticalOptions="Center"/>
+                      </HorizontalStackLayout>
+                    </VerticalStackLayout>
+                  </Grid>
+                </Grid>
+                </Border>
+              </Grid>
+            </DataTemplate>
+          </CollectionView.ItemTemplate>
+        </CollectionView>
+        <Grid Grid.Row="4" ColumnDefinitions="*,*,*" ColumnSpacing="6">
+          <Button Text="{Binding [ActionClone], Source={x:Static loc:UiStrings.Instance}}" Clicked="CloneClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_copy_neutral.png" ContentLayout="Left,6"/>
+          <Button Grid.Column="1" Text="{Binding [ActionShare], Source={x:Static loc:UiStrings.Instance}}" Clicked="ShareClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_share_neutral.png" ContentLayout="Left,6"/>
+          <Button x:Name="DeleteProfileButton" Grid.Column="2" Text="{Binding [ActionDelete], Source={x:Static loc:UiStrings.Instance}}" Clicked="DeleteClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_delete_neutral.png" ContentLayout="Left,6"/>
+        </Grid>
+        <!-- Server editing is a distinct, node-scoped workspace at the bottom of the sidebar. -->
+        <Button Grid.Row="5" x:Name="NodeNavButton" AutomationId="nav-server-settings"
+                Text="{Binding [NavServerSettings], Source={x:Static loc:UiStrings.Instance}}"
+                Clicked="ShowNodeClicked" Style="{StaticResource NavigationButtonStyle}"
+                Margin="0,8,0,0" ImageSource="action_settings_neutral.png" ContentLayout="Left,6" HandlerChanged="NavigationButtonHandlerChanged" />
+      </Grid>
+    </Border>
+    <!-- One active workspace section at a time; existing event contracts are preserved. -->
+    <Grid Grid.Row="1" Grid.Column="1" RowDefinitions="Auto,*" RowSpacing="14" Padding="22,20,22,14">
+      <VerticalStackLayout Spacing="9">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="10">
+          <VerticalStackLayout Spacing="4">
+            <Label x:Name="WorkspaceTitle" Text="服务器设置" Style="{StaticResource WorkspaceTitleStyle}"/>
+            <Label x:Name="WorkspaceSubtitle" Text="管理节点并配置传输层、TLS 和认证参数。" Style="{StaticResource HintLabelStyle}"/>
+          </VerticalStackLayout>
+          <Border Grid.Column="1" BackgroundColor="{AppThemeBinding Light=#E8F1FF, Dark=#223956}"
+                  StrokeThickness="0" Padding="12,6" StrokeShape="RoundRectangle 16" VerticalOptions="Center">
+            <Label x:Name="ConnectionStateLabel" Text="未连接" FontSize="13" FontAttributes="Bold"
+                   TextColor="{AppThemeBinding Light=#2559A1, Dark=#9BC9FF}"/>
+          </Border>
+        </Grid>
+        <!-- Pending configuration is intentionally never applied by changing selection or saving. -->
+        <Border x:Name="PendingRoutingBanner" IsVisible="False" AutomationId="pending-core-routing"
+                BackgroundColor="{AppThemeBinding Light=#FFF5E8, Dark=#473920}"
+                Stroke="{AppThemeBinding Light=#EEC58E, Dark=#9E7942}" StrokeThickness="1"
+                StrokeShape="RoundRectangle 10" Padding="11,7">
+          <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+            <Label Text="{Binding [RoutingPendingReconnectHint], Source={x:Static loc:UiStrings.Instance}}"
+                   VerticalOptions="Center" LineBreakMode="WordWrap" FontSize="12"
+                   TextColor="{AppThemeBinding Light=#845516, Dark=#FFDAA4}"/>
+            <Button x:Name="PendingReconnectButton" Grid.Column="1" Clicked="PendingReconnectClicked"
+                    Text="{Binding [ActionReconnectToApply], Source={x:Static loc:UiStrings.Instance}}"
+                    Style="{StaticResource SmallButtonStyle}" AutomationId="apply-pending-routing" ImageSource="action_refresh_neutral.png" ContentLayout="Left,6"/>
+          </Grid>
+        </Border>
+      </VerticalStackLayout>
+      <Border Grid.Row="1" Style="{StaticResource SurfaceCardStyle}">
+        <ScrollView AutomationId="workspace-scroll">
+          <VerticalStackLayout Padding="4,4,12,16" Spacing="16">
+            <VerticalStackLayout xmlns="http://schemas.microsoft.com/dotnet/2021/maui" xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml" x:Name="NodeSection" Spacing="10">
+<Label x:Name="RunningNodeLockNotice" IsVisible="False" Text="{Binding [RunningNodeEditLocked], Source={x:Static loc:UiStrings.Instance}}" TextColor="{AppThemeBinding Light=#945800, Dark=#F5CC8A}" FontAttributes="Bold" FontSize="13" LineBreakMode="WordWrap"/>
+<VerticalStackLayout x:Name="NodeEditFields" Spacing="10">
+<!-- The selected node owns this V4/V5 choice; keep it inline with the Connection heading. -->
+<Grid ColumnDefinitions="*,Auto,94" ColumnSpacing="10" Margin="0,10,0,3" VerticalOptions="Center">
+  <Label Grid.Column="0" Text="{Binding [SectionConnection], Source={x:Static loc:UiStrings.Instance}}" FontAttributes="Bold" FontSize="17" VerticalOptions="Center"/>
+  <Label Grid.Column="1" Text="{Binding [ConfigJsonFormat], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}" VerticalOptions="Center"/>
+  <Picker x:Name="ConfigVersionPicker" Grid.Column="2" WidthRequest="94" MinimumWidthRequest="94" HorizontalOptions="End" VerticalOptions="Center" SelectedIndexChanged="ConfigVersionChanged" AutomationId="config-format"/>
+</Grid>
+<Grid ColumnDefinitions="*,*" RowSpacing="8" ColumnSpacing="12" RowDefinitions="Auto,Auto,Auto,Auto">
+<VerticalStackLayout Grid.Row="0" Grid.Column="0"><VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldServerName], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Entry x:Name="NameEntry" Placeholder="{Binding [PlaceholderServerName], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout></VerticalStackLayout>
+<VerticalStackLayout Grid.Row="0" Grid.Column="1"><VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldProtocol], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Picker x:Name="ProtocolPicker" SelectedIndexChanged="ProtocolChanged"/></VerticalStackLayout></VerticalStackLayout>
+<VerticalStackLayout Grid.Row="1" Grid.Column="0"><VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldServerAddress], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Entry x:Name="AddressEntry" Placeholder="{Binding [PlaceholderServerAddress], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout></VerticalStackLayout>
+<VerticalStackLayout Grid.Row="1" Grid.Column="1"><VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldServerPort], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Entry x:Name="PortEntry" Keyboard="Numeric" Placeholder="{Binding [PlaceholderServerPort], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout></VerticalStackLayout>
+<VerticalStackLayout x:Name="VmessUuidPanel" Grid.Row="2" Grid.Column="0" Spacing="3"><Label Text="{Binding [FieldVmessUuid], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Entry x:Name="UuidEntry" Placeholder="{Binding [PlaceholderVmessUuid], Source={x:Static loc:UiStrings.Instance}}" AutomationId="vmess-uuid"/></VerticalStackLayout>
+<VerticalStackLayout x:Name="TrojanPasswordPanel" Grid.Row="2" Grid.Column="1" Spacing="3"><Label Text="{Binding [FieldTrojanPassword], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Entry x:Name="PasswordEntry" Placeholder="{Binding [PlaceholderTrojanPassword], Source={x:Static loc:UiStrings.Instance}}" IsPassword="True" AutomationId="trojan-password"/></VerticalStackLayout>
+<VerticalStackLayout Grid.Row="3" Grid.Column="0"><VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldVmessEncryption], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Picker x:Name="VmessSecurityPicker" Title="{Binding [OptionEncryptionAuto], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout></VerticalStackLayout>
+<VerticalStackLayout Grid.Row="3" Grid.Column="1"><VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldVmessAlterId], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Entry x:Name="VmessAlterIdEntry" Placeholder="{Binding [PlaceholderVmessAlterId], Source={x:Static loc:UiStrings.Instance}}" Keyboard="Numeric" Text="0"/></VerticalStackLayout></VerticalStackLayout>
+</Grid>
+<Label Text="{Binding [SectionTransportSecurity], Source={x:Static loc:UiStrings.Instance}}" FontAttributes="Bold" FontSize="17" Margin="0,10,0,3"/>
+<Grid ColumnDefinitions="*,*" RowSpacing="8" ColumnSpacing="12" RowDefinitions="Auto,Auto,Auto,Auto,Auto">
+<VerticalStackLayout Grid.Row="0" Grid.Column="0"><VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldTransportType], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Picker x:Name="TransportPicker" SelectedIndexChanged="TransportChanged"/></VerticalStackLayout></VerticalStackLayout>
+<VerticalStackLayout Grid.Row="0" Grid.Column="1"><VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldTlsServerName], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Entry x:Name="SniEntry" Placeholder="{Binding [PlaceholderTlsServerName], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout></VerticalStackLayout>
+<VerticalStackLayout Grid.Row="1" Grid.Column="0"><Grid ColumnDefinitions="48,*" ColumnSpacing="4"><Switch Grid.Column="0" HorizontalOptions="Start" Scale="0.84" x:Name="TlsSwitch" Toggled="SecurityOptionsChanged"/><Label Grid.Column="1" Text="{Binding [ToggleEnableTls], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/></Grid></VerticalStackLayout>
+<VerticalStackLayout Grid.Row="1" Grid.Column="1"><Grid ColumnDefinitions="48,*" ColumnSpacing="4"><Switch Grid.Column="0" HorizontalOptions="Start" Scale="0.84" x:Name="UdpSwitch"/><Label Grid.Column="1" Text="{Binding [ToggleHy2UdpExtension], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/></Grid></VerticalStackLayout>
+<VerticalStackLayout Grid.Row="2" Grid.Column="0"><VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldTlsAlpn], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Entry x:Name="AlpnEntry" Placeholder="{Binding [PlaceholderTlsAlpn], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout></VerticalStackLayout>
+<VerticalStackLayout Grid.Row="2" Grid.Column="1"><VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldPinnedCertificate], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Entry x:Name="PinEntry" Placeholder="{Binding [PlaceholderPinnedCertificate], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout></VerticalStackLayout>
+<VerticalStackLayout Grid.Row="3" Grid.Column="0"><VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldHy2Password], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Entry x:Name="Hy2PasswordEntry" Placeholder="{Binding [PlaceholderHy2Password], Source={x:Static loc:UiStrings.Instance}}" IsPassword="True"/></VerticalStackLayout></VerticalStackLayout>
+<VerticalStackLayout Grid.Row="3" Grid.Column="1"><VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldHy2Congestion], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Picker x:Name="CongestionPicker" SelectedIndexChanged="SecurityOptionsChanged"/></VerticalStackLayout></VerticalStackLayout>
+<VerticalStackLayout Grid.Row="4" Grid.Column="0"><VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldBrutalUploadMbps], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Entry x:Name="UploadEntry" Keyboard="Numeric" Placeholder="{Binding [PlaceholderBrutalUpload], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout></VerticalStackLayout>
+<VerticalStackLayout Grid.Row="4" Grid.Column="1"><VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldBrutalDownloadMbps], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Entry x:Name="DownloadEntry" Keyboard="Numeric" Placeholder="{Binding [PlaceholderBrutalDownload], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout></VerticalStackLayout>
+</Grid>
+<VerticalStackLayout Spacing="4" x:Name="AllowInsecurePanel">
+  <Grid ColumnDefinitions="48,*" ColumnSpacing="4"><Switch Grid.Column="0" HorizontalOptions="Start" Scale="0.84" x:Name="AllowInsecureSwitch" AutomationId="allow-insecure-v4"/><Label Grid.Column="1" Text="{Binding [ToggleAllowInsecureTls], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center" TextColor="#C76649"/></Grid>
+  <Label Text="{Binding [HelpAllowInsecureTls], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+</VerticalStackLayout>
+<Border x:Name="TransportDetailsPanel" Style="{StaticResource InnerCardStyle}">
+  <VerticalStackLayout Spacing="10">
+    <Label x:Name="TransportDetailsTitle" Text="{Binding [SectionTransportParameters], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource SectionTitleStyle}"/>
+    <Label x:Name="TransportDetailsHint" Text="{Binding [HelpTransportParameters], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+    <VerticalStackLayout x:Name="WebSocketPanel" Spacing="10">
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+        <VerticalStackLayout Grid.Column="0" Spacing="4"><Label Text="{Binding [FieldWebSocketPath], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/><Entry x:Name="WsPathEntry" Placeholder="{Binding [ExampleRootPath], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout>
+        <VerticalStackLayout Grid.Column="1" Spacing="4"><Label Text="{Binding [FieldWebSocketHeaders], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/><Editor x:Name="WsHeadersEntry" HeightRequest="76" AutoSize="Disabled" Placeholder="{}{}"/></VerticalStackLayout>
+      </Grid>
+    </VerticalStackLayout>
+    <VerticalStackLayout x:Name="GrpcPanel" Spacing="6">
+      <Label Text="{Binding [FieldGrpcServiceName], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+      <Entry x:Name="GrpcEntry" Placeholder="{Binding [ExampleGrpcService], Source={x:Static loc:UiStrings.Instance}}"/>
+    </VerticalStackLayout>
+    <VerticalStackLayout x:Name="HttpUpgradePanel" Spacing="10">
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+        <VerticalStackLayout Grid.Column="0" Spacing="4"><Label Text="{Binding [FieldHttpUpgradePath], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/><Entry x:Name="Http2PathEntry" Placeholder="{Binding [ExampleRootPath], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout>
+        <VerticalStackLayout Grid.Column="1" Spacing="4"><Label Text="{Binding [FieldHttpUpgradeHost], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/><Entry x:Name="Http2HostsEntry" Placeholder="{Binding [ExampleServerDomain], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout>
+      </Grid>
+    </VerticalStackLayout>
+    <VerticalStackLayout x:Name="TcpPanel" Spacing="6">
+      <Label Text="{Binding [FieldTcpHeader], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+      <Editor x:Name="TcpHeaderEntry" HeightRequest="76" AutoSize="Disabled" Placeholder="{}{&quot;type&quot;:&quot;none&quot;}"/>
+    </VerticalStackLayout>
+    <VerticalStackLayout x:Name="KcpTransportPanel" Spacing="9">
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto,Auto,Auto">
+        <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="4"><Label Text="{Binding [FieldKcpMtu], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/><Entry x:Name="KcpMtuEntry" Placeholder="{Binding [PlaceholderKcpMtu], Source={x:Static loc:UiStrings.Instance}}" Keyboard="Numeric"/></VerticalStackLayout>
+        <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="4"><Label Text="{Binding [FieldKcpTti], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/><Entry x:Name="KcpTtiEntry" Placeholder="{Binding [PlaceholderKcpTti], Source={x:Static loc:UiStrings.Instance}}" Keyboard="Numeric"/></VerticalStackLayout>
+        <VerticalStackLayout Grid.Row="1" Grid.Column="0" Spacing="4"><Label Text="{Binding [FieldKcpUplinkCapacity], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/><Entry x:Name="KcpUplinkEntry" Placeholder="{Binding [PlaceholderKcpUplink], Source={x:Static loc:UiStrings.Instance}}" Keyboard="Numeric"/></VerticalStackLayout>
+        <VerticalStackLayout Grid.Row="1" Grid.Column="1" Spacing="4"><Label Text="{Binding [FieldKcpDownlinkCapacity], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/><Entry x:Name="KcpDownlinkEntry" Placeholder="{Binding [PlaceholderKcpDownlink], Source={x:Static loc:UiStrings.Instance}}" Keyboard="Numeric"/></VerticalStackLayout>
+        <VerticalStackLayout Grid.Row="2" Grid.Column="0" Spacing="4"><Label Text="{Binding [FieldKcpReceiveBuffer], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/><Entry x:Name="KcpReadEntry" Placeholder="{Binding [PlaceholderKcpReceiveBuffer], Source={x:Static loc:UiStrings.Instance}}" Keyboard="Numeric"/></VerticalStackLayout>
+        <VerticalStackLayout Grid.Row="2" Grid.Column="1" Spacing="4"><Label Text="{Binding [FieldKcpSendBuffer], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/><Entry x:Name="KcpWriteEntry" Placeholder="{Binding [PlaceholderKcpSendBuffer], Source={x:Static loc:UiStrings.Instance}}" Keyboard="Numeric"/></VerticalStackLayout>
+        <VerticalStackLayout Grid.Row="3" Grid.Column="0" Spacing="4"><Label Text="{Binding [FieldKcpHeader], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/><Entry x:Name="KcpHeaderEntry" Placeholder="{Binding [PlaceholderKcpHeader], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout>
+        <VerticalStackLayout Grid.Row="3" Grid.Column="1" Spacing="4"><Grid ColumnDefinitions="48,*" ColumnSpacing="4"><Switch x:Name="KcpCongestionSwitch" Grid.Column="0" Scale="0.84" HorizontalOptions="Start"/><Label Grid.Column="1" Text="{Binding [ToggleKcpCongestion], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/></Grid></VerticalStackLayout>
+      </Grid>
+    </VerticalStackLayout>
+    <VerticalStackLayout x:Name="QuicTransportPanel" Spacing="9">
+      <Grid ColumnDefinitions="*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto">
+        <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="4"><Label Text="{Binding [FieldQuicSecurity], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/><Entry x:Name="QuicSecurityEntry" Placeholder="{Binding [PlaceholderQuicSecurity], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout>
+        <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="4"><Label Text="{Binding [FieldQuicKey], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/><Entry x:Name="QuicKeyEntry" Placeholder="{Binding [PlaceholderQuicKey], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout>
+        <VerticalStackLayout Grid.Row="1" Grid.Column="0" Spacing="4"><Label Text="{Binding [FieldQuicHeader], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/><Entry x:Name="QuicHeaderEntry" Placeholder="{Binding [PlaceholderQuicHeader], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout>
+      </Grid>
+    </VerticalStackLayout>
+  </VerticalStackLayout>
+</Border>
+<Border x:Name="SocketOptionsPanel" Style="{StaticResource InnerCardStyle}">
+  <VerticalStackLayout Spacing="8">
+    <Label Text="{Binding [SectionConnectionOptions], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource SectionTitleStyle}"/>
+    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+      <Grid Grid.Column="0" ColumnDefinitions="48,*" ColumnSpacing="4"><Switch Grid.Column="0" x:Name="TcpFastOpenSwitch" Scale="0.84" HorizontalOptions="Start"/><Label Grid.Column="1" Text="{Binding [ToggleTcpFastOpen], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/></Grid>
+      <Grid Grid.Column="1" ColumnDefinitions="48,*" ColumnSpacing="4"><Switch Grid.Column="0" x:Name="MuxSwitch" Toggled="SecurityOptionsChanged" Scale="0.84" HorizontalOptions="Start"/><Label Grid.Column="1" Text="{Binding [ToggleMux], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/></Grid>
+    </Grid>
+    <VerticalStackLayout Spacing="4"><Label Text="{Binding [FieldMuxConcurrency], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/><Entry x:Name="MuxEntry" Placeholder="{Binding [PlaceholderMuxConcurrency], Source={x:Static loc:UiStrings.Instance}}" Keyboard="Numeric"/></VerticalStackLayout>
+  </VerticalStackLayout>
+</Border>
+</VerticalStackLayout>
+<FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Center"><Button Margin="0,0,8,8" x:Name="SaveProfileButton" Text="{Binding [ActionSaveServer], Source={x:Static loc:UiStrings.Instance}}" Clicked="SaveClicked" ImageSource="action_save_neutral.png" ContentLayout="Left,6"/><Button Margin="0,0,8,8" Text="{Binding [ActionApplyServer], Source={x:Static loc:UiStrings.Instance}}" Clicked="ApplyClicked" ImageSource="action_plug_neutral.png" ContentLayout="Left,6"/></FlexLayout>
+</VerticalStackLayout>
+
+            <VerticalStackLayout xmlns="http://schemas.microsoft.com/dotnet/2021/maui" xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml" x:Name="SettingsSection" Spacing="10" IsVisible="False">
+<!-- Workstation-level settings, organised without changing any persisted field or core behavior. -->
+<Border Style="{StaticResource GlobalScopeCardStyle}">
+  <VerticalStackLayout Spacing="4">
+    <Label Text="{Binding [GlobalScopeLabel], Source={x:Static loc:UiStrings.Instance}}"
+           FontAttributes="Bold" FontSize="14" TextColor="{AppThemeBinding Light=#20559A, Dark=#A5CBFF}"/>
+    <Label Text="{Binding [HelpProxySettingsShared], Source={x:Static loc:UiStrings.Instance}}"
+           Style="{StaticResource HintLabelStyle}"/>
+  </VerticalStackLayout>
+</Border>
+
+<!-- Choice cards only mirror the original ProxyModePicker: PAC / Global / Manual. -->
+<Border Style="{StaticResource SurfaceCardStyle}">
+  <VerticalStackLayout Spacing="13">
+    <Label Text="{Binding [FieldSystemProxyMode], Source={x:Static loc:UiStrings.Instance}}"
+           Style="{StaticResource SectionTitleStyle}"/>
+    <Label Text="{Binding [HelpProxyModeCards], Source={x:Static loc:UiStrings.Instance}}"
+           Style="{StaticResource HintLabelStyle}"/>
+    <!-- Keep existing picker as the single source for selection, saving and connection logic. -->
+    <Picker x:Name="ProxyModePicker" IsVisible="False" SelectedIndexChanged="ProxyModeChanged"/>
+    <!-- Responsive grid: three cards on wide windows, two or one when space is limited.
+         Change grid positions only; keep the original picker and card handlers intact. -->
+    <Grid x:Name="ProxyModeCardsGrid" ColumnDefinitions="*,*,*" RowDefinitions="Auto,Auto,Auto"
+          ColumnSpacing="10" RowSpacing="10" HorizontalOptions="Fill"
+          SizeChanged="ProxyModeCardsGridSizeChanged" AutomationId="proxy-mode-responsive-grid">
+      <Border x:Name="PacProxyModeCard" Grid.Column="0" Grid.Row="0"
+              Style="{StaticResource ProxyModeChoiceCardStyle}" AutomationId="mode-card-pac">
+        <Border.GestureRecognizers><TapGestureRecognizer Tapped="PacProxyModeCardTapped"/></Border.GestureRecognizers>
+        <VerticalStackLayout Spacing="7">
+          <Grid ColumnDefinitions="30,*" ColumnSpacing="6">
+            <RadioButton x:Name="PacProxyModeRadio" Grid.Column="0" Value="PAC" GroupName="SystemProxyMode"
+                         Content="" SemanticProperties.Description="{Binding [ProxyModePacTitle], Source={x:Static loc:UiStrings.Instance}}"
+                         CheckedChanged="ProxyModeCardCheckedChanged" HorizontalOptions="Start" VerticalOptions="Start"/>
+            <Label Grid.Column="1" Text="{Binding [ProxyModePacTitle], Source={x:Static loc:UiStrings.Instance}}"
+                   FontAttributes="Bold" FontSize="13" LineBreakMode="WordWrap" VerticalOptions="Center"/>
+          </Grid>
+          <Label Text="{Binding [ProxyModePacDescription], Source={x:Static loc:UiStrings.Instance}}"
+                 Style="{StaticResource HintLabelStyle}" LineBreakMode="WordWrap"/>
+        </VerticalStackLayout>
+      </Border>
+      <Border x:Name="GlobalProxyModeCard" Grid.Column="1" Grid.Row="0"
+              Style="{StaticResource ProxyModeChoiceCardStyle}" AutomationId="mode-card-global">
+        <Border.GestureRecognizers><TapGestureRecognizer Tapped="GlobalProxyModeCardTapped"/></Border.GestureRecognizers>
+        <VerticalStackLayout Spacing="7">
+          <Grid ColumnDefinitions="30,*" ColumnSpacing="6">
+            <RadioButton x:Name="GlobalProxyModeRadio" Grid.Column="0" Value="Global" GroupName="SystemProxyMode"
+                         Content="" SemanticProperties.Description="{Binding [ProxyModeGlobalTitle], Source={x:Static loc:UiStrings.Instance}}"
+                         CheckedChanged="ProxyModeCardCheckedChanged" HorizontalOptions="Start" VerticalOptions="Start"/>
+            <Label Grid.Column="1" Text="{Binding [ProxyModeGlobalTitle], Source={x:Static loc:UiStrings.Instance}}"
+                   FontAttributes="Bold" FontSize="13" LineBreakMode="WordWrap" VerticalOptions="Center"/>
+          </Grid>
+          <Label Text="{Binding [ProxyModeGlobalDescription], Source={x:Static loc:UiStrings.Instance}}"
+                 Style="{StaticResource HintLabelStyle}" LineBreakMode="WordWrap"/>
+        </VerticalStackLayout>
+      </Border>
+      <Border x:Name="ManualProxyModeCard" Grid.Column="2" Grid.Row="0"
+              Style="{StaticResource ProxyModeChoiceCardStyle}" AutomationId="mode-card-manual">
+        <Border.GestureRecognizers><TapGestureRecognizer Tapped="ManualProxyModeCardTapped"/></Border.GestureRecognizers>
+        <VerticalStackLayout Spacing="7">
+          <Grid ColumnDefinitions="30,*" ColumnSpacing="6">
+            <RadioButton x:Name="ManualProxyModeRadio" Grid.Column="0" Value="Manual" GroupName="SystemProxyMode"
+                         Content="" SemanticProperties.Description="{Binding [ProxyModeManualTitle], Source={x:Static loc:UiStrings.Instance}}"
+                         CheckedChanged="ProxyModeCardCheckedChanged" HorizontalOptions="Start" VerticalOptions="Start"/>
+            <Label Grid.Column="1" Text="{Binding [ProxyModeManualTitle], Source={x:Static loc:UiStrings.Instance}}"
+                   FontAttributes="Bold" FontSize="13" LineBreakMode="WordWrap" VerticalOptions="Center"/>
+          </Grid>
+          <Label Text="{Binding [ProxyModeManualDescription], Source={x:Static loc:UiStrings.Instance}}"
+                 Style="{StaticResource HintLabelStyle}" LineBreakMode="WordWrap"/>
+        </VerticalStackLayout>
+      </Border>
+    </Grid>
+    <Label x:Name="ProxyModeDescriptionLabel" Style="{StaticResource HintLabelStyle}"/>
+  </VerticalStackLayout>
+</Border>
+
+<!-- Related port fields are side by side and retain original names and switches. -->
+<Border Style="{StaticResource SurfaceCardStyle}">
+  <VerticalStackLayout Spacing="14">
+    <Label Text="{Binding [SectionLocalProxy], Source={x:Static loc:UiStrings.Instance}}"
+           Style="{StaticResource SectionTitleStyle}"/>
+    <Grid ColumnDefinitions="*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="12">
+      <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource InnerCardStyle}">
+        <VerticalStackLayout Spacing="9">
+          <Label Text="{Binding [ProxyInboundHttpTitle], Source={x:Static loc:UiStrings.Instance}}"
+                 FontAttributes="Bold" FontSize="14"/>
+          <Label Text="{Binding [FieldHttpPort], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+          <Entry x:Name="HttpPortEntry" Keyboard="Numeric" Placeholder="{Binding [PlaceholderHttpPort], Source={x:Static loc:UiStrings.Instance}}"/>
+          <Label Text="{Binding [ProxyInboundHttpDescription], Source={x:Static loc:UiStrings.Instance}}"
+                 Style="{StaticResource HintLabelStyle}"/>
+        </VerticalStackLayout>
+      </Border>
+      <Border Grid.Row="0" Grid.Column="1" Style="{StaticResource InnerCardStyle}">
+        <VerticalStackLayout Spacing="9">
+          <Label Text="{Binding [ProxyInboundSocksTitle], Source={x:Static loc:UiStrings.Instance}}"
+                 FontAttributes="Bold" FontSize="14"/>
+          <Label Text="{Binding [FieldSocksPort], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+          <Entry x:Name="SocksPortEntry" Keyboard="Numeric" Placeholder="{Binding [PlaceholderSocksPort], Source={x:Static loc:UiStrings.Instance}}"/>
+          <Grid ColumnDefinitions="48,*" ColumnSpacing="5">
+            <Switch Grid.Column="0" x:Name="EnableUdpSwitch" Scale="0.84" HorizontalOptions="Start"/>
+            <Label Grid.Column="1" Text="{Binding [ToggleSocksUdp], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/>
+          </Grid>
+        </VerticalStackLayout>
+      </Border>
+      <Border Grid.Row="1" Grid.ColumnSpan="2" Style="{StaticResource InnerCardStyle}">
+        <Grid ColumnDefinitions="*,*" ColumnSpacing="14">
+          <VerticalStackLayout Grid.Column="0" Spacing="5">
+            <Label Text="{Binding [FieldPacPort], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+            <Entry x:Name="PacPortEntry" Keyboard="Numeric" Placeholder="{Binding [PlaceholderPacPort], Source={x:Static loc:UiStrings.Instance}}"/>
+          </VerticalStackLayout>
+          <VerticalStackLayout Grid.Column="1" Spacing="8">
+            <Grid ColumnDefinitions="48,*" ColumnSpacing="5">
+              <Switch Grid.Column="0" x:Name="LanSwitch" Scale="0.84" HorizontalOptions="Start"/>
+              <Label Grid.Column="1" Text="{Binding [ToggleAllowLan], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/>
+            </Grid>
+            <Label Text="{Binding [HelpRestoreWindowsProxy], Source={x:Static loc:UiStrings.Instance}}"
+                   Style="{StaticResource HintLabelStyle}"/>
+          </VerticalStackLayout>
+        </Grid>
+      </Border>
+    </Grid>
+  </VerticalStackLayout>
+</Border>
+
+<Border Style="{StaticResource SurfaceCardStyle}">
+  <VerticalStackLayout Spacing="13">
+    <Label Text="{Binding [ProxyAdditionalSettingsTitle], Source={x:Static loc:UiStrings.Instance}}"
+           Style="{StaticResource SectionTitleStyle}"/>
+    <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" RowSpacing="12" ColumnSpacing="12">
+      <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="5">
+        <Label Text="{Binding [FieldCoreRoutingMode], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+        <Picker x:Name="RoutingModePicker" SelectedIndexChanged="RoutingModeChanged"/>
+      </VerticalStackLayout>
+      <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="5">
+        <Label Text="{Binding [FieldLogLevel], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+        <Picker x:Name="LogLevelPicker"/>
+      </VerticalStackLayout>
+      <VerticalStackLayout Grid.Row="1" Grid.Column="0" Spacing="5">
+        <Label Text="{Binding [FieldDnsServers], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+        <Entry x:Name="DnsEntry" Placeholder="{Binding [PlaceholderDnsServers], Source={x:Static loc:UiStrings.Instance}}"/>
+      </VerticalStackLayout>
+      <VerticalStackLayout Grid.Row="1" Grid.Column="1" Spacing="5">
+        <Label Text="{Binding [FieldCoreExecutablePath], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+        <Entry x:Name="CorePathEntry" TextChanged="CorePathChanged"
+               Placeholder="{Binding [PlaceholderCorePath], Source={x:Static loc:UiStrings.Instance}}"/>
+      </VerticalStackLayout>
+    </Grid>
+    <VerticalStackLayout x:Name="SmartFallbackSettingsPanel" Spacing="5">
+      <Label Text="{Binding [FieldSmartUnmatchedRoute], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+      <Picker x:Name="SmartFallbackPicker" SelectedIndexChanged="SmartFallbackChanged" AutomationId="smart-unmatched-settings"/>
+      <Label Text="{Binding [HelpSmartUnmatchedRoute], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+    </VerticalStackLayout>
+    <FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Center">
+      <Grid ColumnDefinitions="48,Auto" Margin="0,0,18,9" ColumnSpacing="5">
+        <Switch Grid.Column="0" x:Name="SniffSwitch" Scale="0.84" HorizontalOptions="Start"/>
+        <Label Grid.Column="1" Text="{Binding [ToggleTrafficSniffing], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/>
+      </Grid>
+      <Grid ColumnDefinitions="48,Auto" Margin="0,0,18,9" ColumnSpacing="5">
+        <Switch Grid.Column="0" x:Name="StartupSwitch" Scale="0.84" HorizontalOptions="Start"/>
+        <Label Grid.Column="1" Text="{Binding [ToggleStartWithWindows], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/>
+      </Grid>
+      <Grid ColumnDefinitions="48,Auto" Margin="0,0,18,9" ColumnSpacing="5">
+        <Switch Grid.Column="0" x:Name="AutoConnectSwitch" Scale="0.84" HorizontalOptions="Start"/>
+        <Label Grid.Column="1" Text="{Binding [ToggleConnectOnStartup], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/>
+      </Grid>
+      <Grid ColumnDefinitions="48,Auto" Margin="0,0,18,9" ColumnSpacing="5">
+        <Switch Grid.Column="0" x:Name="TraySwitch" Scale="0.84" HorizontalOptions="Start"/>
+        <Label Grid.Column="1" Text="{Binding [ToggleMinimizeToTray], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/>
+      </Grid>
+      <Grid ColumnDefinitions="48,Auto" Margin="0,0,18,9" ColumnSpacing="5">
+        <Switch Grid.Column="0" x:Name="BalanceSwitch" Scale="0.84" HorizontalOptions="Start"/>
+        <Label Grid.Column="1" Text="{Binding [ToggleBalanceServers], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/>
+      </Grid>
+    </FlexLayout>
+  </VerticalStackLayout>
+</Border>
+<FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Center">
+  <Button Margin="0,0,8,8" Text="{Binding [ActionSaveSettings], Source={x:Static loc:UiStrings.Instance}}" Clicked="SaveClicked" ImageSource="action_save_neutral.png" ContentLayout="Left,6"/>
+  <Button Margin="0,0,8,8" Text="{Binding [ActionViewGeneratedConfig], Source={x:Static loc:UiStrings.Instance}}" Clicked="PreviewConfigClicked" ImageSource="action_file_code_neutral.png" ContentLayout="Left,6"/>
+  <Button Margin="0,0,8,8" Text="{Binding [ActionExportJson], Source={x:Static loc:UiStrings.Instance}}" Clicked="ExportClicked" ImageSource="action_download_neutral.png" ContentLayout="Left,6"/>
+  <Button Margin="0,0,8,8" Text="{Binding [ActionOpenDataFolder], Source={x:Static loc:UiStrings.Instance}}" Clicked="OpenDataClicked" ImageSource="action_folder_open_neutral.png" ContentLayout="Left,6"/>
+</FlexLayout>
+<Border Style="{StaticResource InnerCardStyle}">
+  <VerticalStackLayout Spacing="9">
+    <Label Text="{Binding [SectionCoreUpdates], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource SectionTitleStyle}"/>
+    <Label x:Name="CurrentCoreVersionLabel" Text="当前内核：尚未检查" Style="{StaticResource HintLabelStyle}"/>
+    <Label x:Name="LatestCoreVersionLabel" Text="最新稳定版：尚未检查" Style="{StaticResource HintLabelStyle}"/>
+    <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+      <Switch x:Name="IncludePrereleaseCoreSwitch" Scale="0.8" VerticalOptions="Center" Toggled="CorePrereleaseToggled" AutomationId="core-include-prerelease"/>
+      <Label Text="{Binding [ToggleCorePrerelease], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/>
+    </HorizontalStackLayout>
+    <FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Center">
+      <Button x:Name="CheckCoreUpdateButton" Margin="0,0,8,6" Text="{Binding [ActionCheckCoreUpdates], Source={x:Static loc:UiStrings.Instance}}" Clicked="CheckCoreUpdatesClicked" Style="{StaticResource SecondaryButtonStyle}" AutomationId="core-update-check" ImageSource="action_search_neutral.png" ContentLayout="Left,6"/>
+      <Button x:Name="InstallCoreUpdateButton" Margin="0,0,8,6" Text="{Binding [ActionInstallCoreUpdate], Source={x:Static loc:UiStrings.Instance}}" Clicked="InstallCoreUpdateClicked" Style="{StaticResource PrimaryButtonStyle}" AutomationId="core-update-install" IsEnabled="False" ImageSource="action_download_primary.png" ContentLayout="Left,6"/>
+    </FlexLayout>
+    <Label x:Name="CoreUpdateStatusLabel" Text="{Binding [CoreUpdateDescription], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}" LineBreakMode="WordWrap"/>
+  </VerticalStackLayout>
+</Border>
+<HorizontalStackLayout Spacing="8">
+  <Button Text="{Binding [ActionClearLogs], Source={x:Static loc:UiStrings.Instance}}" Clicked="ClearLogClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_delete_neutral.png" ContentLayout="Left,6"/>
+  <Button Text="{Binding [ActionExportLogs], Source={x:Static loc:UiStrings.Instance}}" Clicked="ExportLogClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_download_neutral.png" ContentLayout="Left,6"/>
+</HorizontalStackLayout>
+</VerticalStackLayout>
+
+            <VerticalStackLayout xmlns="http://schemas.microsoft.com/dotnet/2021/maui" xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml" x:Name="RoutingSection" Spacing="10" IsVisible="False">
+<Border Style="{StaticResource GlobalScopeCardStyle}">
+ <VerticalStackLayout Spacing="4">
+  <Label Text="{Binding [GlobalScopeLabel], Source={x:Static loc:UiStrings.Instance}}" FontAttributes="Bold" FontSize="15" TextColor="{AppThemeBinding Light=#20559A, Dark=#A5CBFF}"/>
+  <Label Text="{Binding [HelpRoutingSettingsShared], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+ </VerticalStackLayout>
+</Border>
+<Label Text="{Binding [SectionPacRulesTemplates], Source={x:Static loc:UiStrings.Instance}}" FontAttributes="Bold" FontSize="17" Margin="0,10,0,3"/>
+<VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldPacFile], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Picker x:Name="PacPicker" SelectedIndexChanged="PacPickerChanged"/></VerticalStackLayout>
+<VerticalStackLayout Spacing="3"><Label Text="{Binding [FieldNewPacFilename], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/><Entry x:Name="PacNameEntry" Placeholder="{Binding [PlaceholderPacFilename], Source={x:Static loc:UiStrings.Instance}}"/></VerticalStackLayout>
+<Border Style="{StaticResource InnerCardStyle}">
+  <VerticalStackLayout Spacing="12">
+    <Label Text="{Binding [SectionPacRuleBuilder], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource SectionTitleStyle}"/>
+    <Label Text="{Binding [HelpPacRuleBuilder], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+      <VerticalStackLayout Grid.Column="0" Spacing="5">
+        <Label Text="{Binding [FieldPacTemplate], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+        <Picker x:Name="PacTemplatePicker" MinimumWidthRequest="240" HorizontalOptions="Fill" AutomationId="pac-template"/>
+      </VerticalStackLayout>
+      <VerticalStackLayout Grid.Column="1" Spacing="5">
+        <Label Text="{Binding [FieldHttpProxyEndpoint], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+        <Label Text="{Binding [HelpHttpProxyEndpoint], Source={x:Static loc:UiStrings.Instance}}" FontSize="13" VerticalOptions="Center"/>
+      </VerticalStackLayout>
+    </Grid>
+    <Grid ColumnDefinitions="*,*" ColumnSpacing="12">
+      <VerticalStackLayout Grid.Column="0" Spacing="5">
+        <Label Text="{Binding [FieldPacDirectSites], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+        <Editor x:Name="PacDirectSitesEditor" HeightRequest="125" Placeholder="{Binding [ExamplePacDirectSites], Source={x:Static loc:UiStrings.Instance}}" AutomationId="pac-direct-websites"/>
+      </VerticalStackLayout>
+      <VerticalStackLayout Grid.Column="1" Spacing="5">
+        <Label Text="{Binding [FieldPacProxySites], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+        <Editor x:Name="PacProxySitesEditor" HeightRequest="125" Placeholder="{Binding [ExamplePacProxySites], Source={x:Static loc:UiStrings.Instance}}" AutomationId="pac-proxy-websites"/>
+      </VerticalStackLayout>
+    </Grid>
+    <Label Text="{Binding [HelpPacSubdomains], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+    <Label x:Name="SmartManagedPacNoticeLabel" Text="{Binding [SmartManagedPacNotice], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}" IsVisible="False"/>
+    <Label Text="{Binding [HelpPacWebsiteComments], Source={x:Static loc:UiStrings.Instance}}"
+           Style="{StaticResource HintLabelStyle}"/>
+    <HorizontalStackLayout Spacing="8">
+      <Button Text="{Binding [ActionPreviewPac], Source={x:Static loc:UiStrings.Instance}}" Clicked="PreviewPacTemplateClicked" ImageSource="action_eye_neutral.png" ContentLayout="Left,6"/>
+      <Button Text="{Binding [ActionGeneratePac], Source={x:Static loc:UiStrings.Instance}}" Clicked="ApplyPacTemplateClicked" Style="{StaticResource PrimaryButtonStyle}" ImageSource="action_refresh_primary.png" ContentLayout="Left,6"/>
+    </HorizontalStackLayout>
+    <Label x:Name="PacTemplateStatusLabel" Style="{StaticResource HintLabelStyle}" Text="可输入域名、*.域名或 HTTPS 网站地址；保存后在 PAC 模式下生效。"/>
+  </VerticalStackLayout>
+</Border>
+<Label Text="{Binding [SectionPacScript], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource SectionTitleStyle}"/>
+<Editor x:Name="PacScriptEditor" Placeholder="{Binding [PlaceholderPacScript], Source={x:Static loc:UiStrings.Instance}}" HeightRequest="200" FontSize="13"/>
+<FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Center"><Button Margin="0,0,8,8" Text="{Binding [ActionNewPac], Source={x:Static loc:UiStrings.Instance}}" Clicked="AddPacClicked" ImageSource="action_plus_neutral.png" ContentLayout="Left,6"/><Button Margin="0,0,8,8" Text="{Binding [ActionSavePac], Source={x:Static loc:UiStrings.Instance}}" Clicked="SavePacClicked" ImageSource="action_save_neutral.png" ContentLayout="Left,6"/><Button Margin="0,0,8,8" Text="{Binding [ActionRefreshPac], Source={x:Static loc:UiStrings.Instance}}" Clicked="RefreshPacClicked" ImageSource="action_refresh_neutral.png" ContentLayout="Left,6"/></FlexLayout>
+<Border Style="{StaticResource InnerCardStyle}">
+  <VerticalStackLayout Spacing="9">
+    <Label Text="{Binding [SectionGeoData], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource SectionTitleStyle}"/>
+    <Label Text="{Binding [HelpGeoDataScope], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+    <Label Text="{Binding [HelpBypassChinaRules], Source={x:Static loc:UiStrings.Instance}}" FontSize="13"/>
+    <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+      <VerticalStackLayout Spacing="4">
+        <Label Text="{Binding [FieldGeoIpDataset], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+        <Picker x:Name="GeoIpFilePicker" MinimumWidthRequest="230" HorizontalOptions="Fill" AutomationId="geoip-file"/>
+      </VerticalStackLayout>
+      <HorizontalStackLayout Grid.Column="1" Spacing="6" VerticalOptions="End">
+        <Button Text="{Binding [ActionCheckGeoData], Source={x:Static loc:UiStrings.Instance}}" Clicked="CheckGeoAssetsClicked" Style="{StaticResource SecondaryButtonStyle}" ImageSource="action_search_neutral.png" ContentLayout="Left,6"/>
+        <Button Text="{Binding [ActionUpdateGeoData], Source={x:Static loc:UiStrings.Instance}}" Clicked="UpdateGeoAssetsClicked" Style="{StaticResource SecondaryButtonStyle}" ImageSource="action_download_neutral.png" ContentLayout="Left,6"/>
+      </HorizontalStackLayout>
+    </Grid>
+    <Label x:Name="GeoAssetsStatusLabel" Style="{StaticResource HintLabelStyle}" Text="Geo 文件位于 v2ray-core/，由 V2Fly 内核读取。"/>
+  </VerticalStackLayout>
+</Border>
+<Label Text="{Binding [SectionAdvancedRouting], Source={x:Static loc:UiStrings.Instance}}" FontAttributes="Bold" FontSize="17" Margin="0,10,0,3"/>
+<Border Style="{StaticResource InnerCardStyle}">
+  <VerticalStackLayout Spacing="12">
+    <!-- Step 1: choose which routing mode is in effect. The custom rule set is only editable when Custom is selected. -->
+    <Grid ColumnDefinitions="*,232" ColumnSpacing="12">
+      <VerticalStackLayout Spacing="4">
+        <Label Text="{Binding [RoutingStep1], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource SectionTitleStyle}"/>
+        <Label Text="{Binding [HelpVisualRouting], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+      </VerticalStackLayout>
+      <VerticalStackLayout Grid.Column="1" Spacing="4">
+        <Label Text="{Binding [FieldCoreRoutingMode], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+        <Picker x:Name="RouteModeInRoutingPicker" WidthRequest="224" HorizontalOptions="End" ItemDisplayBinding="{Binding Label}" SelectedIndexChanged="RoutingModeChanged" AutomationId="route-mode-picker"/>
+      </VerticalStackLayout>
+    </Grid>
+    <VerticalStackLayout x:Name="SmartFallbackRoutingPanel" Spacing="5" IsVisible="True">
+      <Label Text="{Binding [FieldSmartUnmatchedRoute], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+      <Picker x:Name="SmartFallbackRoutingPicker" HorizontalOptions="Fill" SelectedIndexChanged="SmartFallbackChanged" AutomationId="smart-unmatched-routing"/>
+      <Label Text="{Binding [HelpSmartUnmatchedRoute], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+    </VerticalStackLayout>
+    <!-- A read-only view of built-in routing, including the zero-rule ProxyAll default. -->
+    <Border x:Name="BuiltInRoutePreview" IsVisible="True" Stroke="{AppThemeBinding Light=#DCE7F3, Dark=#38516F}" StrokeThickness="1" Padding="12" StrokeShape="RoundRectangle 10">
+      <VerticalStackLayout Spacing="7">
+        <Label Text="{Binding [RoutingBuiltInPreviewTitle], Source={x:Static loc:UiStrings.Instance}}" FontAttributes="Bold" FontSize="14"/>
+        <Label x:Name="BuiltInRouteSummary" FontSize="13" LineBreakMode="WordWrap"/>
+        <Label Text="{Binding [RoutingBuiltInReadonly], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+        <Label Text="{Binding [RoutingManagedPacOnly], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+      </VerticalStackLayout>
+    </Border>
+    <VerticalStackLayout x:Name="CustomRouterPanel" Spacing="12" IsVisible="False">
+      <!-- The set name is deliberately at the top, before priority and rule fields. -->
+      <Grid ColumnDefinitions="*,*,192" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="4">
+        <Label Grid.Row="0" Grid.Column="0" Text="{Binding [FieldRouteRuleSet], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+        <Label Grid.Row="0" Grid.Column="1" Text="{Binding [FieldRouteSetName], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+        <Label Grid.Row="0" Grid.Column="2" Text="{Binding [FieldRoutingDomainStrategy], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+        <Picker Grid.Row="1" Grid.Column="0" x:Name="RulePicker" HorizontalOptions="Fill" ItemDisplayBinding="{Binding Name}" SelectedIndexChanged="RulePickerChanged" AutomationId="route-ruleset-picker"/>
+        <Entry Grid.Row="1" Grid.Column="1" x:Name="RuleNameEntry" Placeholder="{Binding [PlaceholderRouteSetName], Source={x:Static loc:UiStrings.Instance}}"/>
+        <Picker Grid.Row="1" Grid.Column="2" x:Name="RouteStrategyPicker" WidthRequest="188" HorizontalOptions="Start" SelectedIndexChanged="RouteStrategyChanged" AutomationId="dns-strategy-picker"/>
+      </Grid>
+      <Label Text="{Binding [HelpDomainStrategy], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+      <FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Center">
+        <Button Margin="0,0,6,6" Text="{Binding [ActionNewRouteSet], Source={x:Static loc:UiStrings.Instance}}" Clicked="AddRuleClicked" Style="{StaticResource PrimaryButtonStyle}" ImageSource="action_plus_primary.png" ContentLayout="Left,6"/>
+        <Button Margin="0,0,6,6" Text="{Binding [ActionSaveRouteSet], Source={x:Static loc:UiStrings.Instance}}" Clicked="SaveRuleClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_save_neutral.png" ContentLayout="Left,6"/>
+        <Button Margin="0,0,6,6" Text="{Binding [ActionDeleteRouteSet], Source={x:Static loc:UiStrings.Instance}}" Clicked="DeleteRuleClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_delete_neutral.png" ContentLayout="Left,6"/>
+      </FlexLayout>
+      <Label x:Name="RouteEmptyStateLabel" Text="{Binding [RoutingNoRuleSet], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+      <VerticalStackLayout x:Name="VisualRouteEditor" Spacing="10" IsVisible="False">
+        <Grid ColumnDefinitions="*,Auto" ColumnSpacing="12">
+          <VerticalStackLayout Spacing="4">
+            <Label Text="{Binding [RoutingStep2], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource SectionTitleStyle}"/>
+            <Label Text="{Binding [RoutingRulePriorityHelp], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+          </VerticalStackLayout>
+          <Button Grid.Column="1" Text="{Binding [ActionAddVisualRule], Source={x:Static loc:UiStrings.Instance}}" Clicked="AddVisualRuleClicked" Style="{StaticResource PrimaryButtonStyle}" VerticalOptions="Center" AutomationId="new-route-rule" ImageSource="action_plus_primary.png" ContentLayout="Left,6"/>
+        </Grid>
+        <CollectionView x:Name="VisualRuleList" HeightRequest="162" SelectionMode="Single" SelectionChanged="VisualRuleSelectionChanged" AutomationId="visual-routing-rules">
+          <CollectionView.ItemTemplate>
+            <DataTemplate>
+              <Border Stroke="{AppThemeBinding Light=#E2E8F0, Dark=#40516B}" StrokeThickness="1" StrokeShape="RoundRectangle 8" Margin="0,2" Padding="8,9">
+                <Label Text="{Binding .}" FontSize="13" LineBreakMode="TailTruncation"/>
+              </Border>
+            </DataTemplate>
+          </CollectionView.ItemTemplate>
+        </CollectionView>
+        <Label x:Name="RouteListEmptyLabel" Text="{Binding [RoutingNoRulesNext], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+        <VerticalStackLayout x:Name="RouteDetailPanel" Spacing="10" IsVisible="False">
+          <Label Text="{Binding [RoutingStep3], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource SectionTitleStyle}"/>
+          <Label x:Name="RouteDraftHelpLabel" Text="{Binding [RoutingNewRuleDraft], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}" IsVisible="False"/>
+          <Grid ColumnDefinitions="*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="9">
+            <VerticalStackLayout Grid.Row="0" Grid.Column="0" Spacing="4">
+              <Label Text="{Binding [FieldRoutingOutbound], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+              <Picker x:Name="RouteTargetPicker" ItemDisplayBinding="{Binding Label}" AutomationId="route-outbound-picker"/>
+            </VerticalStackLayout>
+            <VerticalStackLayout Grid.Row="0" Grid.Column="1" Spacing="4">
+              <Label Text="{Binding [FieldRoutingNetwork], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+              <Picker x:Name="RouteNetworkPicker"/>
+            </VerticalStackLayout>
+            <VerticalStackLayout Grid.Row="1" Grid.Column="0" Spacing="4">
+              <Label Text="{Binding [FieldRoutingDomains], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+              <Label Text="{Binding [HelpRoutingDomains], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+              <Editor x:Name="RouteDomainsEditor" HeightRequest="104" Placeholder="{Binding [PlaceholderRoutingDomains], Source={x:Static loc:UiStrings.Instance}}"/>
+            </VerticalStackLayout>
+            <VerticalStackLayout Grid.Row="1" Grid.Column="1" Spacing="4">
+              <Label Text="{Binding [FieldRoutingIps], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+              <Label Text="{Binding [HelpRoutingIps], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+              <Editor x:Name="RouteIpsEditor" HeightRequest="104" Placeholder="{Binding [PlaceholderRoutingIps], Source={x:Static loc:UiStrings.Instance}}"/>
+            </VerticalStackLayout>
+          </Grid>
+          <Label Text="{Binding [HelpRoutingAndConditions], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+          <VerticalStackLayout Spacing="3">
+            <Label Text="{Binding [FieldRoutingPorts], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+            <Entry x:Name="RoutePortsEntry" Placeholder="{Binding [PlaceholderRoutingPorts], Source={x:Static loc:UiStrings.Instance}}"/>
+          </VerticalStackLayout>
+          <FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Center">
+            <Button x:Name="SaveVisualRuleButton" Margin="0,0,6,6" Text="{Binding [ActionApplyVisualRule], Source={x:Static loc:UiStrings.Instance}}" Clicked="ApplyVisualRuleClicked" Style="{StaticResource PrimaryButtonStyle}" ImageSource="action_check_primary.png" ContentLayout="Left,6"/>
+            <Button x:Name="MoveRuleUpButton" Margin="0,0,6,6" Text="{Binding [ActionMoveRuleUp], Source={x:Static loc:UiStrings.Instance}}" Clicked="MoveVisualRuleUpClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_arrow_up_neutral.png" ContentLayout="Left,6"/>
+            <Button x:Name="MoveRuleDownButton" Margin="0,0,6,6" Text="{Binding [ActionMoveRuleDown], Source={x:Static loc:UiStrings.Instance}}" Clicked="MoveVisualRuleDownClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_arrow_down_neutral.png" ContentLayout="Left,6"/>
+            <Button x:Name="DeleteVisualRuleButton" Margin="0,0,6,6" Text="{Binding [ActionRemoveVisualRule], Source={x:Static loc:UiStrings.Instance}}" Clicked="RemoveVisualRuleClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_delete_neutral.png" ContentLayout="Left,6"/>
+          </FlexLayout>
+        </VerticalStackLayout>
+        <Label Text="{Binding [HelpVisualRoutingSave], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+      </VerticalStackLayout>
+      <HorizontalStackLayout Spacing="8" VerticalOptions="Center">
+        <Label Text="{Binding [ToggleEditRawRouting], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/>
+        <Switch x:Name="RouteRawModeSwitch" Toggled="RouteRawModeToggled" Scale="0.8" VerticalOptions="Center"/>
+      </HorizontalStackLayout>
+      <Editor x:Name="RoutingJsonEditor" IsVisible="False" Placeholder="{Binding [PlaceholderRouteJson], Source={x:Static loc:UiStrings.Instance}}" AutoSize="TextChanges" HeightRequest="220" FontSize="13"/>
+    </VerticalStackLayout>
+  </VerticalStackLayout>
+</Border>
+
+<Label Text="{Binding [SectionCustomConfig], Source={x:Static loc:UiStrings.Instance}}" FontAttributes="Bold" FontSize="17" Margin="0,10,0,3"/>
+<Grid ColumnDefinitions="48,*" ColumnSpacing="4"><Switch Grid.Column="0" HorizontalOptions="Start" Scale="0.84" x:Name="UseCustomSwitch" Toggled="CustomConfigToggled"/><Label Grid.Column="1" Text="{Binding [ToggleUseCustomConfig], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/></Grid>
+<Label x:Name="CustomConfigLabel" FontSize="13" TextColor="#637891"/>
+<FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Center"><Button Margin="0,0,8,8" Text="{Binding [ActionPickJsonFile], Source={x:Static loc:UiStrings.Instance}}" Clicked="PickCustomClicked" ImageSource="action_folder_open_neutral.png" ContentLayout="Left,6"/><Button Margin="0,0,8,8" Text="{Binding [ActionValidateConfig], Source={x:Static loc:UiStrings.Instance}}" Clicked="TestClicked" ImageSource="action_check_circle_neutral.png" ContentLayout="Left,6"/></FlexLayout>
+</VerticalStackLayout>
+
+            </VerticalStackLayout>
+        </ScrollView>
+      </Border>
+    </Grid>
+    <!-- Fixed bottom connection controls and diagnostic output. -->
+    <Border Grid.Row="2" Grid.ColumnSpan="2" BackgroundColor="{AppThemeBinding Light=#FFFFFF, Dark=#172233}" Stroke="{AppThemeBinding Light=#DFE7F1, Dark=#334155}" StrokeThickness="1">
+      <Grid Padding="20,10" RowDefinitions="Auto,*,Auto" RowSpacing="7">
+        <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="8">
+          <Button x:Name="ConnectionActionButton" Text="{Binding [ActionConnectSwitch], Source={x:Static loc:UiStrings.Instance}}" Clicked="ConnectionActionClicked" Style="{StaticResource PrimaryButtonStyle}" WidthRequest="156" AutomationId="connection-action-bottom" ImageSource="action_plug_primary.png" ContentLayout="Left,6"/>
+          <Button Grid.Column="1" Text="{Binding [ActionValidateConfig], Source={x:Static loc:UiStrings.Instance}}" Clicked="TestClicked" Style="{StaticResource SecondaryButtonStyle}" ImageSource="action_check_circle_neutral.png" ContentLayout="Left,6"/>
+          <Button Grid.Column="2" Text="{Binding [ActionViewRunningConfig], Source={x:Static loc:UiStrings.Instance}}" Clicked="ViewConfigClicked" Style="{StaticResource SecondaryButtonStyle}" WidthRequest="174" ImageSource="action_file_code_neutral.png" ContentLayout="Left,6"/>
+          <Label x:Name="StatusLabel" Grid.Column="3" Text="未连接" FontSize="13" FontAttributes="Bold" TextColor="{AppThemeBinding Light=#334155, Dark=#CBD5E1}" VerticalOptions="Center" HorizontalOptions="End"/>
+        </Grid>
+        <!-- Always-visible vertical scrollbar; the newest entry is at the bottom. -->
+        <ScrollView x:Name="LogScrollView" Grid.Row="1" Orientation="Vertical"
+                    VerticalScrollBarVisibility="Always" AutomationId="runtime-log"
+                    BackgroundColor="{AppThemeBinding Light=#F6F9FD, Dark=#0F172A}">
+          <VerticalStackLayout Padding="8,5" Spacing="0">
+            <Label x:Name="LogTextLabel" Text="" FontFamily="{StaticResource AppCodeFontFamily}"
+                   FontSize="12" LineBreakMode="CharacterWrap"/>
+            <BoxView x:Name="LogTailAnchor" HeightRequest="1" Opacity="0"/>
+          </VerticalStackLayout>
+        </ScrollView>
+        <!-- Three-zone bottom status bar: configured ports on the left, live proxy traffic
+             in the true horizontal center, and the active runtime mode on the right.
+             This is layout-only: sampling, label bindings, and core behavior are unchanged. -->
+        <Grid Grid.Row="2" ColumnDefinitions="*,2*,*" ColumnSpacing="14" MinimumHeightRequest="35">
+          <Label x:Name="ConfiguredPortsFooterLabel" Grid.Column="0" Text="" FontSize="11"
+                 TextColor="{AppThemeBinding Light=#536780, Dark=#BBCBDD}"
+                 LineBreakMode="TailTruncation" MaxLines="1" VerticalOptions="Center"/>
+          <!-- A single compact line: rates, session totals and any unavailable state.
+               The center zone is width-constrained so totals truncate instead of wrapping. -->
+          <Grid Grid.Column="1" ColumnDefinitions="Auto,Auto,*,Auto" ColumnSpacing="10"
+                HorizontalOptions="Fill" VerticalOptions="Center" MinimumHeightRequest="20">
+            <HorizontalStackLayout Grid.Column="0" Spacing="4" VerticalOptions="Center">
+              <Label Text="↑" FontAttributes="Bold" FontSize="13" TextColor="#D08A36" VerticalOptions="Center"/>
+              <Label x:Name="UploadSpeedLabel" Text="—" FontSize="11" VerticalOptions="Center"
+                     MaxLines="1" LineBreakMode="NoWrap" AutomationId="traffic-upload-speed"/>
+            </HorizontalStackLayout>
+            <HorizontalStackLayout Grid.Column="1" Spacing="4" VerticalOptions="Center">
+              <Label Text="↓" FontAttributes="Bold" FontSize="13" TextColor="#3183D9" VerticalOptions="Center"/>
+              <Label x:Name="DownloadSpeedLabel" Text="—" FontSize="11" VerticalOptions="Center"
+                     MaxLines="1" LineBreakMode="NoWrap" AutomationId="traffic-download-speed"/>
+            </HorizontalStackLayout>
+            <Label Grid.Column="2" x:Name="TrafficTotalsLabel" Text="" FontSize="11" MaxLines="1"
+                   LineBreakMode="TailTruncation" HorizontalTextAlignment="Center"
+                   VerticalOptions="Center" HorizontalOptions="Fill"
+                   TextColor="{AppThemeBinding Light=#536780, Dark=#BBCBDD}"
+                   AutomationId="traffic-session-totals"/>
+            <Label Grid.Column="3" x:Name="TrafficAvailabilityLabel" Text="" FontSize="11"
+                   MaxLines="1" LineBreakMode="TailTruncation"
+                   TextColor="{AppThemeBinding Light=#64748B, Dark=#CBD5E1}" VerticalOptions="Center"/>
+          </Grid>
+          <Label Grid.Column="2" x:Name="RunningModeFooterLabel" Text=""
+                 FontSize="11" FontAttributes="Bold" VerticalOptions="Center" HorizontalOptions="End"
+                 LineBreakMode="TailTruncation" MaxLines="1"
+                 TextColor="{AppThemeBinding Light=#277454, Dark=#8CD5B4}"/>
+        </Grid>
+      </Grid>
+    </Border>
+  </Grid>
+</ContentPage>

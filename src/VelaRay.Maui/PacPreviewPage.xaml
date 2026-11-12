@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ContentPage xmlns="http://schemas.microsoft.com/dotnet/2021/maui" xmlns:x="http://schemas.microsoft.com/winfx/2009/xaml" xmlns:loc="clr-namespace:VelaRay.Maui.Localization" x:Class="VelaRay.Maui.PacPreviewPage" Title="{Binding [PacViewerTitle], Source={x:Static loc:UiStrings.Instance}}" BackgroundColor="{AppThemeBinding Light=#F4F7FB, Dark=#101722}">
+  <Grid Padding="20" RowDefinitions="Auto,Auto,*,Auto" RowSpacing="12">
+    <Label Text="{Binding [PacViewerGeneratedScript], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource WorkspaceTitleStyle}"/>
+    <Label Grid.Row="1" Text="{Binding [HelpPacViewer], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+    <Border Grid.Row="2" Style="{StaticResource SurfaceCardStyle}">
+      <Editor x:Name="PacPreviewEditor" IsReadOnly="True" FontSize="12" FontFamily="{StaticResource AppCodeFontFamily}"/>
+    </Border>
+    <HorizontalStackLayout Grid.Row="3" Spacing="10" HorizontalOptions="End">
+      <Button Text="{Binding [ActionCopyPac], Source={x:Static loc:UiStrings.Instance}}" Clicked="CopyClicked" Style="{StaticResource SecondaryButtonStyle}" ImageSource="action_copy_neutral.png" ContentLayout="Left,6"/>
+      <Button Text="{Binding [ActionClose], Source={x:Static loc:UiStrings.Instance}}" Clicked="CloseClicked" Style="{StaticResource PrimaryButtonStyle}" ImageSource="action_x_primary.png" ContentLayout="Left,6"/>
+    </HorizontalStackLayout>
+  </Grid>
+</ContentPage>
