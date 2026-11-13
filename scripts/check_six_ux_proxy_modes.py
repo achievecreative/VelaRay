@@ -58,7 +58,7 @@ assert '_runningProxyMode' in code.split('private void UpdateFooterStatus()',1)[
 assert 'UpdateFooterStatus();' in code
 assert 'VerticalScrollBarVisibility="Always"' in xaml
 # Existing essential actions and pending-PAC flow intact.
-for n in ('HeaderConnectionButton','ConnectionActionButton','PendingReconnectButton',
+for n in ('HeaderConnectionButton','PendingReconnectButton',
           'CheckCoreUpdateButton','InstallCoreUpdateButton','ChineseLanguageButton','EnglishLanguageButton'):
     named(n)
 for k in ('HelpProxyModeCards','ProxyModePacTitle','ProxyModeGlobalTitle','ProxyModeManualTitle',

@@ -13,9 +13,9 @@ def one(name):
 profile_list=one('ProfilesList')
 items_layout=profile_list.find('m:CollectionView.ItemsLayout/m:LinearItemsLayout', namespaces=ns)
 assert items_layout is not None and items_layout.get('Orientation')=='Vertical'
-assert items_layout.get('ItemSpacing')=='12', 'Use native CollectionView item spacing, not a template margin'
+assert items_layout.get('ItemSpacing')=='2', 'Use native CollectionView item spacing, not a template margin'
 template_root=profile_list.find('m:CollectionView.ItemTemplate/m:DataTemplate/m:Grid',namespaces=ns)
-assert template_root is not None and template_root.get('ColumnDefinitions')=='*,18'
+assert template_root is not None and template_root.get('ColumnDefinitions')=='*,10'
 assert template_root.get('HorizontalOptions')=='Fill', 'Template root must occupy the full item width'
 card=template_root.find('m:Border',namespaces=ns)
 assert card is not None and card.get('Grid.Column')=='0'
@@ -34,7 +34,7 @@ assert card.get('{http://schemas.microsoft.com/winfx/2009/xaml}Name')=='ProfileC
 footer=one('ConfiguredPortsFooterLabel').getparent()
 assert footer.tag.endswith('Grid')
 assert footer.get('ColumnDefinitions')=='*,2*,*'
-assert footer.get('Grid.Row')=='2'
+assert footer.get('Grid.Row')=='1', 'Log action toolbar removed; traffic footer now occupies row 1'
 assert one('ConfiguredPortsFooterLabel').get('Grid.Column')=='0'
 assert one('RunningModeFooterLabel').get('Grid.Column')=='2'
 center=one('UploadSpeedLabel').getparent().getparent()
@@ -52,4 +52,4 @@ for name in ('DownloadSpeedLabel','TrafficTotalsLabel','TrafficAvailabilityLabel
 code=(root/'src/VelaRay.Maui/MainPage.xaml.cs').read_text(encoding='utf-8')
 for name in ('UploadSpeedLabel','DownloadSpeedLabel','TrafficTotalsLabel','TrafficAvailabilityLabel', 'ConfiguredPortsFooterLabel','RunningModeFooterLabel'):
     assert name in code,name
-print('PASS: native CollectionView 12dp spacing, actual card gutter outside border, selected state, centered one-line traffic')
+print('PASS: native CollectionView 2dp spacing, actual card gutter outside border, selected state, centered one-line traffic')

@@ -145,7 +145,7 @@ Check(Pending(), "advanced core routing change is marked pending");
 liveSettings.RoutingMode = "Smart";
 Check(!Pending(), "restoring the running configuration clears pending state");
 liveSettings.ProxyMode = "Global";
-Check(Pending(), "system proxy mode change requires reconnect to apply");
+Check(!Pending(), "system proxy mode alone does not require restarting the core");
 liveSettings.ProxyMode = "PAC";
 Check(RunningConfigChangeDetector.NeedsReconnect(liveSettings, liveJson, liveNode.Id,
     false, null, "PAC", liveSettings.PacPort+1), "PAC listener port change requires reconnect");
@@ -758,8 +758,24 @@ var smartProxySettings = new ClientSettings
 };
 smartProxySettings.Profiles.Add(smartServer);
 Check(SmartRoutingPolicy.ProxyUnmatched(smartProxySettings) &&
-      SmartRoutingPolicy.EffectiveManagedPacTemplate(smartProxySettings) == PacTemplateGenerator.ProxyByDefault,
-      "Smart Proxy fallback also routes unmatched managed PAC traffic into V2Fly");
+      SmartRoutingPolicy.EffectiveManagedPacTemplate(smartProxySettings) == PacTemplateGenerator.DirectByDefault,
+      "Smart Proxy fallback does not override the PAC Direct-by-default selection");
+smartProxySettings.PacTemplate = PacTemplateGenerator.ProxyByDefault;
+Check(SmartRoutingPolicy.EffectiveManagedPacTemplate(smartProxySettings) == PacTemplateGenerator.ProxyByDefault,
+      "PAC Proxy-by-default remains an explicit separate choice");
+smartProxySettings.PacTemplate = PacTemplateGenerator.DirectByDefault;
+var generatedPac = PacTemplateGenerator.Generate(
+    SmartRoutingPolicy.EffectiveManagedPacTemplate(smartProxySettings),
+    smartProxySettings.PacDirectWebsites, smartProxySettings.PacProxyWebsites, 10809);
+Check(System.Text.RegularExpressions.Regex.IsMatch(generatedPac, @"return 'DIRECT';\s*}\s*$"),
+      "Smart Proxy fallback and a DirectByDefault PAC still return DIRECT for unmatched websites");
+smartProxySettings.PacTemplate = PacTemplateGenerator.ProxyByDefault;
+var proxyDefaultPac = PacTemplateGenerator.Generate(
+    SmartRoutingPolicy.EffectiveManagedPacTemplate(smartProxySettings),
+    smartProxySettings.PacDirectWebsites, smartProxySettings.PacProxyWebsites, 10809);
+Check(System.Text.RegularExpressions.Regex.IsMatch(proxyDefaultPac, @"return 'PROXY 127\.0\.0\.1:10809';\s*}\s*$"),
+      "Only explicit ProxyByDefault PAC sends unmatched websites to the local proxy");
+smartProxySettings.PacTemplate = PacTemplateGenerator.DirectByDefault;
 Check(SmartRoutingPolicy.Describe(smartProxySettings).Last().Contains("其余流量 → 代理") &&
       SmartRoutingPolicy.Describe(smartProxySettings, english: true).Last().Contains("Everything else → Proxy"),
       "Smart preview reports proxy fallback in both languages");
@@ -849,6 +865,52 @@ Check(JsonNode.Parse(generatedV4)!["api"] is null && JsonNode.Parse(generatedV5)
 try { CoreTrafficStatistics.Enable(generatedV4, ConfigFlavor.V4, 80); throw new Exception("missed invalid-port test"); }
 catch (ArgumentOutOfRangeException) { }
 Console.WriteLine("Traffic statistics: optional V4/V5 API and monotonic speed calculation regressions passed.");
+
+// A rule edited in Routing & PAC must not change the next normal core connection.
+var savedRule = new RoutingRuleSet
+{
+    Name = "Selected policy",
+    Json = "{\"rules\":[{\"type\":\"field\",\"outboundTag\":\"direct\",\"domain\":[\"domain:old.example\"]}]}"
+};
+var separateRoutingSettings = new ClientSettings
+{
+    RoutingMode = "Custom",
+    RoutingRuleSets = [savedRule],
+    SelectedRoutingRuleId = savedRule.Id
+};
+CustomRoutingDeployment.MigrateLegacy(separateRoutingSettings);
+separateRoutingSettings.Profiles.Add(hy2);
+var activeRoutingJson = ConfigFlavor.Build(separateRoutingSettings, hy2);
+Check(separateRoutingSettings.AppliedRoutingRuleJson == savedRule.Json &&
+      separateRoutingSettings.EditingRoutingRuleId == savedRule.Id,
+      "legacy settings migration pins the selected custom rule before editing");
+var originalV4Routing = V4ConfigBuilder.BuildRouting(separateRoutingSettings).ToJsonString();
+var originalV5Routing = Config(separateRoutingSettings, hy2)["router"]!.ToJsonString();
+savedRule.Json = "{\"rules\":[{\"type\":\"field\",\"outboundTag\":\"direct\",\"domain\":[\"domain:new.example\"]}]}";
+separateRoutingSettings.EditingRoutingRuleId = savedRule.Id;
+Check(V4ConfigBuilder.BuildRouting(separateRoutingSettings).ToJsonString() == originalV4Routing &&
+      Config(separateRoutingSettings, hy2)["router"]!.ToJsonString() == originalV5Routing,
+      "editing a selected rule does not change V4/V5 core JSON even after ordinary reconnect");
+Check(!RunningConfigChangeDetector.NeedsReconnect(separateRoutingSettings, activeRoutingJson, hy2.Id,
+          false, null, "PAC", separateRoutingSettings.PacPort),
+      "editing a saved rule draft does not set the running-core pending flag");
+var persistedRouting = JsonSerializer.Deserialize<ClientSettings>(JsonSerializer.Serialize(separateRoutingSettings))!;
+CustomRoutingDeployment.MigrateLegacy(persistedRouting);
+Check(V4ConfigBuilder.BuildRouting(persistedRouting).ToJsonString() == originalV4Routing,
+      "applied snapshot persists across settings save/reload");
+CustomRoutingDeployment.Apply(separateRoutingSettings, savedRule.Id);
+Check(V4ConfigBuilder.BuildRouting(separateRoutingSettings).ToJsonString() != originalV4Routing &&
+      Config(separateRoutingSettings, hy2)["router"]!.ToJsonString() != originalV5Routing,
+      "explicit Proxy settings application updates the V4/V5 snapshot");
+Check(RunningConfigChangeDetector.NeedsReconnect(separateRoutingSettings, activeRoutingJson, hy2.Id,
+          false, null, "PAC", separateRoutingSettings.PacPort),
+      "explicit promotion flags a running core for manual reconnect");
+var activeJsonBeforeDeletion = CustomRoutingDeployment.ResolveJson(separateRoutingSettings);
+separateRoutingSettings.RoutingRuleSets.Clear();
+Check(CustomRoutingDeployment.ResolveJson(separateRoutingSettings) == activeJsonBeforeDeletion &&
+      V4ConfigBuilder.BuildRouting(separateRoutingSettings).ToJsonString().Contains("new.example"),
+      "deleting an editor rule does not erase the selected snapshot");
+Console.WriteLine("Custom routing editing, snapshot persistence, and explicit application regression tests passed.");
 
 Console.WriteLine("Smart Proxy fallback/PAC synchronization regression tests passed.");
 Console.WriteLine("Smart routing V4/V5 direct-fallback regression tests passed.");

@@ -16,9 +16,10 @@ def named(name):
     values=[e for e in ui.iter() if e.get('{'+ns['x']+'}Name')==name]
     assert len(values)==1, f'expected one {name}'
     return values[0]
-for name in ('HeaderConnectionButton','ConnectionActionButton'):
+for name in ('HeaderConnectionButton',):
     assert named(name).get('Clicked')=='ConnectionActionClicked'
 assert not any(e.get('Clicked')=='DisconnectClicked' for e in ui.iter())
+assert not any(e.get('AutomationId')=='connection-action-bottom' for e in ui.iter())
 assert 'ConnectionActionResolver.Resolve(' in code
 assert all(action in resolver for action in ('Connect, Switch, Disconnect','runningProfileIds.Contains(selectedProfileId)'))
 assert 'selected node' in resolver.lower() or 'editor selection' in resolver.lower()

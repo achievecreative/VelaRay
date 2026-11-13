@@ -12,7 +12,7 @@ x = '{http://schemas.microsoft.com/winfx/2009/xaml}'
 name = lambda n: n.get(x+'Name')
 named = {name(n): n for n in xml.iter() if name(n)}
 assert named['HeaderConnectionButton'].get('WidthRequest') == '156'
-assert named['ConnectionActionButton'].get('WidthRequest') == '156'
+assert 'ConnectionActionButton' not in named, 'Bottom connection button has been removed by design'
 assert named['LogScrollView'].get('VerticalScrollBarVisibility') == 'Always'
 assert named['LogScrollView'].get('Orientation') == 'Vertical'
 assert named['ChineseLanguageButton'].get('Clicked') == 'ChineseLanguageClicked'

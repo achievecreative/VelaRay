@@ -119,6 +119,7 @@ public sealed class ClientSettingsStore
             profile.ConfigVersion = ConfigFlavor.Normalize(profile.ConfigVersion);
         // Load only the current VelaRay settings schema; do not import previous clients implicitly.
         settings.RoutingRuleSets ??= [];
+        CustomRoutingDeployment.MigrateLegacy(settings);
         return settings;
     }
 

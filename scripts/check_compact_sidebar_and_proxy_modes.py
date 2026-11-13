@@ -28,11 +28,11 @@ nav=code.split('private static void NavigationButtonHandlerChanged',1)[1].split(
 assert '#if WINDOWS' in nav and 'ToggleConnectionAsync' not in nav
 
 # Server card: comfortable 78dp minimum, only name bold, 10dp scrollbar clearance.
-items=xaml.split('<!-- Selected card uses blue outline;',1)[1].split('<Grid Grid.Row="4" ColumnDefinitions="*,*,*"',1)[0]
+items=xaml.split('<!-- Selected card uses blue outline;',1)[1].split('<Grid Grid.Row="4" ColumnDefinitions=',1)[0]
 assert 'MinimumHeightRequest="92"' not in items
 assert 'MinimumHeightRequest="78"' in items
-assert 'LinearItemsLayout Orientation="Vertical" ItemSpacing="12"' in items
-assert 'Grid ColumnDefinitions="*,18" HorizontalOptions="Fill"' in items
+assert 'LinearItemsLayout Orientation="Vertical" ItemSpacing="2"' in items
+assert 'Grid ColumnDefinitions="*,10" HorizontalOptions="Fill"' in items
 assert 'Margin="0,0,10,12"' not in items
 assert 'Padding="12,11,12,11"' in items
 assert 'RowSpacing="6"' in items
@@ -74,5 +74,5 @@ for forbidden in ('ConnectAsync(', 'ToggleConnectionAsync(', '_proxy.Enable', 'S
 assert named('ProxyModePicker').get('IsVisible')=='False'
 assert named('ProxyModePicker').get('SelectedIndexChanged')=='ProxyModeChanged'
 print('PASS: 3 workspace tabs have native left-aligned contents without changing Clicked handlers')
-print('PASS: 78dp server card, ItemSpacing 12dp, 18dp right reservation (10dp clearance after scrollbar)')
+print('PASS: 78dp server card, ItemSpacing 2dp, 10dp right reservation (actual clearance varies by scrollbar)')
 print('PASS: PAC/Global/Manual cards reflow into 1, 2, or 3 columns, wrapped content, original mode events preserved')

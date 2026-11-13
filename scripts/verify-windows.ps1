@@ -19,6 +19,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Manual-only V2Fly core check policy failed' }
     python scripts/check_header_action_placement.py
     if ($LASTEXITCODE -ne 0) { throw 'Top-right header action regression check failed' }
+    python scripts/check_log_panel_action_cleanup.py
+    if ($LASTEXITCODE -ne 0) { throw 'Log header actions and sidebar check-config regression failed' }
     python scripts/check_ui_logging_policy.py
     if ($LASTEXITCODE -ne 0) { throw 'Stable actions, language and bounded logging check failed' }
     python scripts/check_workspace_and_platform.py
@@ -29,6 +31,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Smart routing source-contract check failed' }
     python scripts/check_smart_proxy_pac_sync.py
     if ($LASTEXITCODE -ne 0) { throw 'Smart Proxy fallback and PAC suffix integration check failed' }
+    python scripts/check_routing_editor_policy_separation.py
+    if ($LASTEXITCODE -ne 0) { throw 'Routing editor/policy separation check failed' }
+    python scripts/check_proxy_mode_switch_and_pac_fallback.py
+    if ($LASTEXITCODE -ne 0) { throw 'System proxy mode transition and PAC default regression failed' }
     python scripts/check_reference_ui_and_pending_pac.py
     if ($LASTEXITCODE -ne 0) { throw 'Screenshot card layout / staged PAC apply check failed' }
     python scripts/check_six_ux_proxy_modes.py

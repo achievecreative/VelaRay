@@ -11,11 +11,11 @@ assert len(c)==1
 v=c[0]
 assert v.get('SelectionMode')=='Single' and v.get('SelectionChanged')=='ProfilesSelectionChanged'
 layout=v.xpath('./m:CollectionView.ItemsLayout/m:LinearItemsLayout',namespaces=n)
-assert len(layout)==1 and layout[0].get('Orientation')=='Vertical' and layout[0].get('ItemSpacing')=='12'
+assert len(layout)==1 and layout[0].get('Orientation')=='Vertical' and layout[0].get('ItemSpacing')=='2'
 templates=v.xpath('./m:CollectionView.ItemTemplate/m:DataTemplate/m:Grid',namespaces=n)
 assert len(templates)==1
 wrap=templates[0]
-assert wrap.get('ColumnDefinitions')=='*,18' and wrap.get('HorizontalOptions')=='Fill'
+assert wrap.get('ColumnDefinitions')=='*,10' and wrap.get('HorizontalOptions')=='Fill'
 card=wrap.xpath('./m:Border',namespaces=n)
 assert len(card)==1
 card=card[0]
@@ -27,4 +27,4 @@ for state in ('Normal','Selected'):
     assert {s.get('Property') for s in sets}=={'Border.BackgroundColor','Border.Stroke'}
 for b in ('Name','ProtocolBadge','EndpointDisplay','LatencyDisplay','IsConnected'):
     assert '{Binding %s}'%b in etree.tostring(card,encoding='unicode')
-print('PASS: 12dp native vertical spacing; 18dp dedicated right rail; 78dp card; selection and bindings preserved')
+print('PASS: 2dp native vertical spacing; 10dp dedicated right rail; actual clearance varies with scrollbar width; 78dp card; selection and bindings preserved')

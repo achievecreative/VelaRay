@@ -220,5 +220,6 @@
   "默认代理": "Proxy by default",
   "默认直连": "Direct by default",
   "国内网站直连": "Direct for Chinese sites",
-  "服务器设置": "Server settings"
+  "服务器设置": "Server settings",
+  "系统代理模式已应用，无需重新连接": "System proxy mode applied without restarting V2Ray."
 }

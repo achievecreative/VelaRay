@@ -21,7 +21,10 @@ public sealed class PacHttpServer : IDisposable
     {
         Stop();
         Directory.CreateDirectory(Path.GetDirectoryName(pacFile)!);
-        if (!File.Exists(pacFile)) File.WriteAllText(pacFile, DefaultScript(httpPort));
+        // Never silently fall back to the proxy-everything example when a
+        // configured custom PAC file is missing: that can unexpectedly route
+        // every browser request through the proxy after a mode switch.
+        if (!File.Exists(pacFile)) throw new FileNotFoundException("Selected PAC script does not exist.", pacFile);
         _selectedFile = pacFile;
         var cts = new CancellationTokenSource();
         var listener = new TcpListener(IPAddress.Loopback, pacPort);

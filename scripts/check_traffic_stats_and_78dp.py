@@ -10,8 +10,8 @@ stat = (root / 'src/VelaRay.Core/Runtime/CoreTrafficStatistics.cs').read_text(en
 ET.fromstring(xml)
 assert 'MinimumHeightRequest="78"' in xml
 assert 'RowSpacing="6" Padding="12,11,12,11"' in xml
-assert 'LinearItemsLayout Orientation="Vertical" ItemSpacing="12"' in xml
-assert 'Grid ColumnDefinitions="*,18" HorizontalOptions="Fill"' in xml
+assert 'LinearItemsLayout Orientation="Vertical" ItemSpacing="2"' in xml
+assert 'Grid ColumnDefinitions="*,10" HorizontalOptions="Fill"' in xml
 for name in ('UploadSpeedLabel','DownloadSpeedLabel','TrafficTotalsLabel','TrafficAvailabilityLabel'):
     assert f'x:Name="{name}"' in xml and name in cs, name
 assert 'CoreTrafficStatistics.Enable(configJson, SelectedConfigVersion, candidate)' in cs

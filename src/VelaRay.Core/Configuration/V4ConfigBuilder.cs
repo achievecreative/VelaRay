@@ -168,9 +168,7 @@ public static class V4ConfigBuilder
 
     private static JsonObject ParseCustomRouting(ClientSettings options)
     {
-        var source = options.RoutingRuleSets.FirstOrDefault(x => x.Id == options.SelectedRoutingRuleId)
-            ?? throw new ArgumentException("Select a routing rule set.");
-        var routing = V5ConfigBuilder.ParseObject(source.Json, "custom routing");
+        var routing = V5ConfigBuilder.ParseObject(CustomRoutingDeployment.ResolveJson(options), "custom routing");
         if (routing["rules"] is JsonArray) return (JsonObject)routing.DeepClone();
         // V5-only rules have different matcher shapes; do not silently emit an invalid V4 config.
         throw new NotSupportedException("This routing rule set uses V5 'rule'. Select a V4 'rules' rule set or convert it explicitly.");

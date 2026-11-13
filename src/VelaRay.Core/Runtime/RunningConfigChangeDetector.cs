@@ -23,8 +23,9 @@ public static class RunningConfigChangeDetector
         ArgumentNullException.ThrowIfNull(current);
         ArgumentNullException.ThrowIfNull(runningJson);
 
-        if (!string.Equals(runningProxyMode, current.ProxyMode, StringComparison.OrdinalIgnoreCase) ||
-            (runningProxyMode == "PAC" && runningPacPort != current.PacPort) ||
+        // A PAC/Global/Manual change only alters WinINET and the local PAC listener;
+        // it does not change V2Fly's JSON. The UI applies mode-only saves live.
+        if ((runningProxyMode == "PAC" && runningPacPort != current.PacPort) ||
             wasExternalConfig != current.UseCustomConfig)
             return true;
 

@@ -38,9 +38,7 @@ assert not any(c.get('Grid.Column')=='1' and (c is container or view in c.iter()
 assert any(c.get('Grid.Column')=='2' and find_name('ActiveNodeLabel') in c.iter() for c in bar)
 assert any(c.get('Grid.Column')=='3' and find_name('EnglishLanguageButton') in c.iter() for c in bar), 'Language choices must remain in column 3'
 assert view.get('WidthRequest') == '140' and connect.get('WidthRequest') == '156', 'Primary toolbar buttons must keep stable width as labels change'
-assert find_name('ConnectionActionButton').get('WidthRequest') == '156', 'Bottom connection action must keep stable width'
-assert find_name('ConnectionActionButton').get('Clicked') == 'ConnectionActionClicked'
-assert find_name('ConnectionActionButton').get('Clicked')=='ConnectionActionClicked', 'Existing bottom dynamic action must be retained'
+assert not any(n.get('AutomationId')=='connection-action-bottom' for n in ui.iter()), 'Connection action belongs only to the top toolbar'
 assert any(n.get(x+'Name')=='CheckCoreUpdateButton' for n in ui.iter()), 'Core updater must remain available'
-print('PASS: header buttons at top-right; logo/title unmodified; state actions, footer and core updater retained')
+print('PASS: header buttons at top-right; logo/title unmodified; top state action, footer and core updater retained')
 print('NOTE: static layout assertions do not replace Windows MAUI visual verification')

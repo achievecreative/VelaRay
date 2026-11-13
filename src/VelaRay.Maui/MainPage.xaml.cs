@@ -2,7 +2,6 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
-using System.Text;
 using System.Text.Json;
 using VelaRay.Core.Configuration;
 using VelaRay.Core.Models;
@@ -70,6 +69,7 @@ public partial class MainPage : ContentPage
     private bool _hasCheckedInstalledCoreVersion;
     private string _pacTemplateStatusKey = "可输入域名、*.域名或 HTTPS 网站地址；保存后在 PAC 模式下生效。";
     private int _runningHttpPort;
+    private int _runningSocksPort;
     private int _runningPacPort;
     private bool _systemProxyApplied;
     private sealed record PacTemplateChoice(string Key, string Label);
@@ -120,10 +120,9 @@ public partial class MainPage : ContentPage
         CongestionPicker.ItemsSource = new[] { "bbr", "brutal" };
         ProxyModePicker.ItemDisplayBinding = new Binding(nameof(LocalizedChoice.Label));
         RoutingModePicker.ItemDisplayBinding = new Binding(nameof(LocalizedChoice.Label));
-        RouteModeInRoutingPicker.ItemDisplayBinding = new Binding(nameof(LocalizedChoice.Label));
         SmartFallbackPicker.ItemDisplayBinding = new Binding(nameof(LocalizedChoice.Label));
-        SmartFallbackRoutingPicker.ItemDisplayBinding = new Binding(nameof(LocalizedChoice.Label));
         RefreshLocalizedChoices();
+        RefreshBuiltInRouteChoices();
         RefreshSmartUnmatchedChoices();
         GeoIpFilePicker.ItemDisplayBinding = new Binding(nameof(LocalizedChoice.Label));
         RefreshGeoIpChoices();
@@ -138,10 +137,11 @@ public partial class MainPage : ContentPage
             if (_expectedShutdown) return;
             TryRestoreProxy();
             _pac.Stop();
-            StatusLabel.Text = L("代理核心意外退出");
+            AppendLog(L("代理核心意外退出"));
             SetRunningConnection(false);
             UpdateConnectionBanner(false);
             _runningHttpPort = 0;
+            _runningSocksPort = 0;
             _runningPacPort = 0;
         });
     }
@@ -238,13 +238,29 @@ public partial class MainPage : ContentPage
         _loading = true;
         ProxyModePicker.ItemsSource = proxyChoices;
         RoutingModePicker.ItemsSource = routeChoices;
-        RouteModeInRoutingPicker.ItemsSource = routeChoices;
         ProxyModePicker.SelectedItem = proxyChoices.FirstOrDefault(x => x.Value == mode);
         RoutingModePicker.SelectedItem = routeChoices.FirstOrDefault(x => x.Value == route);
-        RouteModeInRoutingPicker.SelectedItem = routeChoices.FirstOrDefault(x => x.Value == route);
         _loading = previousLoading;
         UpdateProxyModeCards();
     }
+    /// <summary>Read-only browsing of all built-in modes; never writes ClientSettings.</summary>
+    private void RefreshBuiltInRouteChoices()
+    {
+        var previous = (BuiltInRouteDetailPicker.SelectedItem as LocalizedChoice)?.Value ?? "Smart";
+        var choices = RouteModes.Where(x => x.Value != "Custom")
+            .Select(x => new LocalizedChoice(x.Value,
+                x.Value == "Smart" ? UiStrings.Instance["RoutingSmartRecommended"] : L(x.Label)))
+            .ToArray();
+        var wasLoading = _loading;
+        _loading = true;
+        try
+        {
+            BuiltInRouteDetailPicker.ItemsSource = choices;
+            BuiltInRouteDetailPicker.SelectedItem = choices.FirstOrDefault(x => x.Value == previous) ?? choices[0];
+        }
+        finally { _loading = wasLoading; }
+    }
+
     private void RefreshSmartUnmatchedChoices()
     {
         var current = _settings.SmartUnmatchedRoute == SmartRoutingPolicy.UnmatchedProxy
@@ -259,9 +275,7 @@ public partial class MainPage : ContentPage
         try
         {
             SmartFallbackPicker.ItemsSource = choices;
-            SmartFallbackRoutingPicker.ItemsSource = choices;
             SmartFallbackPicker.SelectedItem = choices.First(x => x.Value == current);
-            SmartFallbackRoutingPicker.SelectedItem = choices.First(x => x.Value == current);
         }
         finally { _loading = previousLoading; }
         RefreshSmartUnmatchedVisibility();
@@ -272,6 +286,7 @@ public partial class MainPage : ContentPage
         var smart = CurrentRouteMode == "Smart";
         SmartFallbackSettingsPanel.IsVisible = smart;
         SmartFallbackRoutingPanel.IsVisible = smart;
+        ActiveRoutingRuleSettingsPanel.IsVisible = CurrentRouteMode == "Custom";
         SmartManagedPacNoticeLabel.IsVisible = smart && SmartRoutingPolicy.ProxyUnmatched(_settings);
     }
 
@@ -399,8 +414,10 @@ public partial class MainPage : ContentPage
         ShowOnly(active);
         UpdateConnectionBanner(_core.IsRunning);
         RefreshLocalizedChoices();
+        RefreshBuiltInRouteChoices();
         RefreshSmartUnmatchedChoices();
         RefreshGeoIpChoices();
+        RefreshActiveRoutingRuleChoices();
         // Rebuild localized outbound names without resetting an in-progress rule form.
         var selectedTarget = (RouteTargetPicker.SelectedItem as LocalizedChoice)?.Value;
         RefreshRouteTargets();
@@ -416,7 +433,7 @@ public partial class MainPage : ContentPage
         PacTemplatePicker.ItemsSource = localizedChoices;
         PacTemplatePicker.SelectedItem = localizedChoices.FirstOrDefault(x => x.Key == pacKey);
         _loading = false;
-        StatusLabel.Text = _core.IsRunning ? L("已连接") : L("未连接");
+
         PacTemplateStatusLabel.Text = _pacTemplateStatusKey == "RoutingPendingPacDeferred"
             ? UiStrings.Instance["RoutingPendingPacDeferred"] : L(_pacTemplateStatusKey);
         RefreshCoreVersionLabels();
@@ -514,7 +531,7 @@ public partial class MainPage : ContentPage
             _ => "HeaderConnect"
         };
         var label = UiStrings.Instance[key];
-        foreach (var button in new[] { HeaderConnectionButton, ConnectionActionButton })
+        foreach (var button in new[] { HeaderConnectionButton })
         {
             button.Text = label;
             // Keep the icon semantic when the same button becomes Connect / Switch / Disconnect.
@@ -592,7 +609,6 @@ public partial class MainPage : ContentPage
         var selectedFallback = (SmartFallbackPicker.ItemsSource as LocalizedChoice[])?.FirstOrDefault(x =>
             x.Value == _settings.SmartUnmatchedRoute) ?? (SmartFallbackPicker.ItemsSource as LocalizedChoice[])?.FirstOrDefault();
         SmartFallbackPicker.SelectedItem = selectedFallback;
-        SmartFallbackRoutingPicker.SelectedItem = selectedFallback;
         LogLevelPicker.SelectedItem = _settings.LogLevel;
         DnsEntry.Text = _settings.DnsServers;
         CorePathEntry.Text = _settings.CorePathOverride;
@@ -609,6 +625,7 @@ public partial class MainPage : ContentPage
         PacDirectSitesEditor.Text = _settings.PacDirectWebsites ?? "";
         PacProxySitesEditor.Text = _settings.PacProxyWebsites ?? "";
         _loading = false;
+        RefreshActiveRoutingRuleChoices();
         UpdateProxyModeDescription();
         UpdateFooterStatus();
         RefreshGeoFileStatus();
@@ -1029,14 +1046,14 @@ public partial class MainPage : ContentPage
         {
             var answer = await DisplayAlert(L("更新 Geo 数据"), L("将从 V2Fly 官方发布地址下载 geosite.dat、geoip.dat、geoip-only-cn-private.dat，逐个验证 SHA256 后写入 v2ray-core 目录。正在运行的代理需重新连接才会加载新数据。是否继续？"), L("继续"), L("取消"));
             if (!answer) return;
-            StatusLabel.Text = L("正在下载 Geo 数据…");
+
             int count = await _geoUpdater.UpdateAsync(CoreExecutable);
             RefreshGeoFileStatus();
             AppendLog($"Updated {count} verified Geo assets. Reconnect to apply them.");
             await DisplayAlert(L("Geo 数据已更新"), UiStrings.Instance.Language == "en-US"
                 ? $"Updated {count} data files. Disconnect and reconnect to load the new Geo data."
                 : $"已更新 {count} 个数据文件。请断开并重新连接，以便 V2Fly 加载最新的 Geo 数据。", L("确定"));
-            StatusLabel.Text = L(_core.IsRunning ? "已连接（Geo 数据更新待重连）" : "Geo 数据已更新");
+
         }, "更新 Geo 数据失败");
     }
 
@@ -1062,6 +1079,7 @@ public partial class MainPage : ContentPage
         // Reload the selected node to recompute its supported controls and transports;
         // other profiles keep their own V4/V5 choices untouched.
         ShowProfile(current);
+        RefreshBuiltInRouteJsonPreview();
     }
     private void SecurityOptionsChanged(object sender, EventArgs e) => UpdateConditionalFields();
     private void ProtocolChanged(object sender, EventArgs e) => UpdateConditionalFields();
@@ -1143,37 +1161,6 @@ public partial class MainPage : ContentPage
         else ProfilesList.SelectedItem = _selected;
         await _store.SaveAsync(_settings);
     }
-    private async void ShareClicked(object sender, EventArgs e)
-    {
-        if (_selected is null) return;
-        try
-        {
-            CaptureProfile();
-            var p = _selected;
-            string link;
-            if (p.Protocol == "hysteria2")
-            {
-                link = $"hysteria2://{Uri.EscapeDataString(p.TransportPassword)}@{p.Address}:{p.Port}?sni={Uri.EscapeDataString(p.ServerName)}#{Uri.EscapeDataString(p.Name)}";
-            }
-            else if (p.Protocol == "vmess")
-            {
-                if (ConfigFlavor.Normalize(p.ConfigVersion) == ConfigFlavor.V5 && p.VmessAlterId != 0)
-                    throw new NotSupportedException("V5 仅支持 alterId=0。请切换回 V4 修改后再分享。 ");
-                var data = new { v = "2", ps = p.Name, add = p.Address, port = p.Port.ToString(), id = p.Uuid,
-                    aid = p.VmessAlterId.ToString(System.Globalization.CultureInfo.InvariantCulture), scy = p.VmessSecurity, net = p.Transport, host = p.ServerName, path = p.WebSocketPath,
-                    tls = p.TlsEnabled ? "tls" : "", sni = p.ServerName };
-                link = "vmess://" + Convert.ToBase64String(Encoding.UTF8.GetBytes(JsonSerializer.Serialize(data)));
-            }
-            else if (p.Protocol == "trojan")
-                link = $"trojan://{Uri.EscapeDataString(p.Password)}@{p.Address}:{p.Port}?sni={Uri.EscapeDataString(p.ServerName)}#{Uri.EscapeDataString(p.Name)}";
-            else
-                throw new NotSupportedException("Only VMess, Trojan and Hysteria2 share links are supported.");
-            await Clipboard.Default.SetTextAsync(link);
-            await DisplayAlert(L("分享"), L("分享链接已复制；高级传输参数不一定包含在通用分享格式中。"), "OK");
-        }
-        catch (Exception ex) { await AlertAsync("无法分享", ex); }
-    }
-
     private void CaptureProfile()
     {
         if (_selected is not { } p) return;
@@ -1304,9 +1291,98 @@ public partial class MainPage : ContentPage
                 UiStrings.Instance["DisconnectBeforeEdit"], "OK");
             return;
         }
-        try { await SaveAllAsync(); StatusLabel.Text = "设置已保存"; }
+        try
+        {
+            await SaveAllAsync();
+            // Only the proxy-settings Save action may apply a system proxy mode.
+            // Editing a node or clicking a mode card never touches the live connection.
+            var updatedLiveMode = !ReferenceEquals(sender, SaveProfileButton)
+                && await ApplySavedProxyModeWithoutCoreRestartAsync();
+            AppendLog(updatedLiveMode ? L("系统代理模式已应用，无需重新连接") : L("设置已保存"));
+        }
         catch (Exception ex) { await AlertAsync("保存失败", ex); }
     }
+
+    /// <summary>Switch only Windows system proxy/PAC; never restart V2Fly.
+    /// If a pending change would regenerate the running core routing, keep the
+    /// old PAC/mode until the user explicitly chooses Reconnect and apply.
+    /// The shared local HTTP/SOCKS listeners must still use their live ports.</summary>
+    private async Task<bool> ApplySavedProxyModeWithoutCoreRestartAsync()
+    {
+        if (!_core.IsRunning || _settings.ProxyMode == _runningProxyMode ||
+            _connectionActionBusy || _installingCoreUpdate) return false;
+        await _connectionGate.WaitAsync();
+        try
+        {
+            if (!_core.IsRunning || UpdatePendingCoreChanges() ||
+                _settings.ProxyMode == _runningProxyMode) return false;
+
+            // Start PAC BEFORE Windows uses the PAC URL; stop it only AFTER
+            // switching away from PAC. On failure, try restoring the previous
+            // system proxy mode while keeping the running core untouched.
+            var previousMode = _runningProxyMode;
+            try
+            {
+                switch (_settings.ProxyMode)
+                {
+                    case "PAC":
+                        if (_settings.SelectedPacFile.Equals("managed.pac", StringComparison.OrdinalIgnoreCase))
+                            await WriteManagedPacAsync();
+                        _pac.Start(_settings.PacPort, _runningHttpPort, SelectedPacPath);
+                        _systemProxyApplied = true; // A partial WinINET write must be recoverable.
+                        _proxy.EnablePac(_settings.PacPort);
+                        _runningPacPort = _settings.PacPort;
+                        break;
+                    case "Global":
+                        _systemProxyApplied = true;
+                        _proxy.EnableGlobal(_runningHttpPort, _runningSocksPort);
+                        _pac.Stop();
+                        break;
+                    case "Manual":
+                        if (_systemProxyApplied) _proxy.Restore();
+                        _systemProxyApplied = false;
+                        _pac.Stop();
+                        break;
+                    default:
+                        throw new InvalidOperationException("Unsupported system proxy mode: " + _settings.ProxyMode);
+                }
+            }
+            catch
+            {
+                try
+                {
+                    switch (previousMode)
+                    {
+                        case "Global":
+                            _proxy.EnableGlobal(_runningHttpPort, _runningSocksPort);
+                            _systemProxyApplied = true;
+                            _pac.Stop();
+                            break;
+                        case "PAC":
+                            _proxy.EnablePac(_runningPacPort); // Existing PAC listener is still running.
+                            _systemProxyApplied = true;
+                            break;
+                        case "Manual":
+                            _proxy.Restore();
+                            _systemProxyApplied = false;
+                            _pac.Stop();
+                            break;
+                    }
+                }
+                catch (Exception recoveryError)
+                {
+                    AppendLog("Failed to restore previous system proxy mode after an apply error: " + recoveryError.Message);
+                }
+                throw;
+            }
+            _runningProxyMode = _settings.ProxyMode;
+            UpdatePendingCoreChanges();
+            UpdateFooterStatus();
+            return true;
+        }
+        finally { _connectionGate.Release(); }
+    }
+
     private async void ExportClicked(object sender, EventArgs e)
     {
         try
@@ -1430,7 +1506,7 @@ public partial class MainPage : ContentPage
             // Refresh managed rules before the PAC server and WinINET PAC URL become active.
             if (_settings.ProxyMode == "PAC" && _settings.SelectedPacFile.Equals("managed.pac", StringComparison.OrdinalIgnoreCase))
                 await WriteManagedPacAsync();
-            StatusLabel.Text = L("检查配置中…");
+
             await _core.StartAsync(CoreExecutable, activePath, SelectedConfigVersion);
             // Never activate Windows system proxy until the HTTP listener is accepting
             // connections. If the core fails, restore the previous proxy instead.
@@ -1439,6 +1515,7 @@ public partial class MainPage : ContentPage
             await WaitForLocalHttpAsync(_settings.HttpPort);
             await WaitForLocalHttpAsync(_settings.SocksPort);
             _runningHttpPort = _settings.HttpPort;
+            _runningSocksPort = _settings.SocksPort;
             _runningPacPort = _settings.PacPort;
             if (_settings.ProxyMode == "PAC")
             {
@@ -1458,7 +1535,7 @@ public partial class MainPage : ContentPage
             _runningExternalFilePath = _settings.CustomConfigPath;
             SetRunningConnection(true, launchedProfiles, launchedExternal);
             StartTrafficMonitoring(trafficPort);
-            StatusLabel.Text = L("已连接") + ": " + RunningServerLabel;
+
             if (_settings.ProxyMode == "PAC" &&
                 _settings.SelectedPacFile.Equals("managed.pac", StringComparison.OrdinalIgnoreCase))
             {
@@ -1471,7 +1548,7 @@ public partial class MainPage : ContentPage
         catch
         {
             await StopCoreAndProxyAsync();
-            StatusLabel.Text = L("未连接");
+
             UpdateConnectionBanner(false);
             throw;
         }
@@ -1506,7 +1583,7 @@ public partial class MainPage : ContentPage
         {
             _expectedShutdown = true;
             await StopCoreAndProxyAsync();
-            StatusLabel.Text = L("未连接");
+
             UpdateConnectionBanner(false);
         }
         finally { _expectedShutdown = false; _connectionGate.Release(); }
@@ -1521,6 +1598,7 @@ public partial class MainPage : ContentPage
             _pac.Stop();
             SetRunningConnection(false);
             _runningHttpPort = 0;
+            _runningSocksPort = 0;
             _runningPacPort = 0;
             // Log persistence is handled by RuntimeLogStore's periodic 60-second
             // threshold check. Disconnect must not force a disk write. Users can
@@ -1643,46 +1721,81 @@ public partial class MainPage : ContentPage
                 ? "Validation source: external JSON (profile fields are not used)."
                 : $"Validation source: generated {SelectedConfigVersion}; selected node: {_selected?.Name} ({_selected?.Protocol}).");
             await _core.TestConfigAsync(CoreExecutable, config, SelectedConfigVersion);
-            StatusLabel.Text = $"{SelectedConfigVersion} · " + L("配置检查通过") + $" ({ConfigFlavor.Loader(SelectedConfigVersion)})";
+            var confirmation = $"{SelectedConfigVersion} · " + L("配置检查通过") + $" ({ConfigFlavor.Loader(SelectedConfigVersion)})";
+            AppendLog(confirmation);
+            await DisplayAlert(UiStrings.Instance["ActionValidateConfig"], confirmation, L("确定"));
         }, "配置检查失败");
     }
 
+    /// <summary>Show the configured policy and all available built-in definitions.
+    /// The browser's selection is deliberately not persisted or applied to the core.</summary>
     private void RefreshRoutingModePresentation()
     {
         RefreshSmartUnmatchedVisibility();
         var mode = CurrentRouteMode;
-        var custom = mode == "Custom";
-        BuiltInRoutePreview.IsVisible = !custom;
-        CustomRouterPanel.IsVisible = custom;
-        if (custom)
-        {
-            RouteEmptyStateLabel.IsVisible = RulePicker.SelectedItem is not RoutingRuleSet;
-            return;
-        }
-        // Built-in strategies are not saved as custom rule sets. Smart preview includes
-        // the effective direct fallback, implemented by the first outbound in Smart mode.
-        if (mode == "Smart")
-        {
-            BuiltInRouteSummary.Text = string.Join(Environment.NewLine,
-                SmartRoutingPolicy.Describe(_settings, UiStrings.Instance.Language == "en-US"));
-            return;
-        }
-        if (mode == "ProxyAll")
-        {
-            BuiltInRouteSummary.Text = UiStrings.Instance["RoutingProxyAllDefault"];
-            return;
-        }
+        // Both labels describe the choice in Proxy settings, not the preview selection.
+        RouteModeReadOnlyLabel.Text = (RoutingModePicker.SelectedItem as LocalizedChoice)?.Label ?? mode;
+        SmartFallbackReadOnlyLabel.Text = (SmartFallbackPicker.SelectedItem as LocalizedChoice)?.Label
+            ?? _settings.SmartUnmatchedRoute;
+        BuiltInRoutePreview.IsVisible = true;
+        CustomRouterPanel.IsVisible = true;
+        var english = UiStrings.Instance.Language == "en-US";
+        BuiltInSmartRuleSummary.Text = string.Join(Environment.NewLine,
+            SmartRoutingPolicy.Describe(CreateBuiltInRoutingPreviewSettings("Smart"), english));
+        BuiltInProxyAllRuleSummary.Text = UiStrings.Instance["RoutingProxyAllDefault"];
+        BuiltInDirectRuleSummary.Text = UiStrings.Instance["RoutingDirectDefault"];
         try
         {
-            var previewSettings = new ClientSettings { RoutingMode = mode,
-                GeoIpFile = _settings.GeoIpFile, Profiles = _settings.Profiles };
-            var preview = V4ConfigBuilder.BuildRouting(previewSettings).ToJsonString();
-            var summaries = VisualRoutingEditor.Summaries(preview);
-            BuiltInRouteSummary.Text = summaries.Count == 0
+            var previewSettings = CreateBuiltInRoutingPreviewSettings("BypassCN");
+            var summaries = VisualRoutingEditor.Summaries(V4ConfigBuilder.BuildRouting(previewSettings).ToJsonString());
+            BuiltInBypassCnRuleSummary.Text = summaries.Count == 0
                 ? UiStrings.Instance["RoutingProxyAllDefault"]
                 : string.Join(Environment.NewLine, summaries);
         }
-        catch (Exception ex) { BuiltInRouteSummary.Text = ex.Message; }
+        catch (Exception ex) { BuiltInBypassCnRuleSummary.Text = ex.Message; }
+        RefreshBuiltInRouteJsonPreview();
+    }
+
+    private ClientSettings CreateBuiltInRoutingPreviewSettings(string mode) => new()
+    {
+        RoutingMode = mode,
+        SmartUnmatchedRoute = _settings.SmartUnmatchedRoute,
+        GeoIpFile = _settings.GeoIpFile,
+        PacProxyWebsites = _settings.PacProxyWebsites,
+        PacDirectWebsites = _settings.PacDirectWebsites,
+        PacTemplate = _settings.PacTemplate,
+        Profiles = _settings.Profiles,
+        // A built-in preview is not a live balancing or node configuration.
+        BalanceAllNodes = false
+    };
+
+    private void BuiltInRouteDetailChanged(object sender, EventArgs e)
+    {
+        if (_loading) return;
+        RefreshBuiltInRouteJsonPreview();
+    }
+
+    private void RefreshBuiltInRouteJsonPreview()
+    {
+        if (BuiltInRouteJsonPreview is null || BuiltInRouteDetailPicker is null) return;
+        var mode = (BuiltInRouteDetailPicker.SelectedItem as LocalizedChoice)?.Value ?? "Smart";
+        if (mode is not ("Smart" or "ProxyAll" or "Direct" or "BypassCN")) return;
+        try
+        {
+            var previewSettings = CreateBuiltInRoutingPreviewSettings(mode);
+            var useV5 = ConfigFlavor.Normalize(_selected?.ConfigVersion) == ConfigFlavor.V5;
+            var routing = useV5
+                ? V5ConfigBuilder.PreviewBuiltInRouting(previewSettings)
+                : V4ConfigBuilder.BuildRouting(previewSettings);
+            BuiltInRouteJsonPreview.Text = routing.ToJsonString(new JsonSerializerOptions { WriteIndented = true });
+            BuiltInRouteJsonFormatLabel.Text = string.Format(
+                UiStrings.Instance["RoutingBuiltInJsonFormat"], useV5 ? "V5 router" : "V4 routing");
+        }
+        catch (Exception ex)
+        {
+            BuiltInRouteJsonPreview.Text = ex.Message;
+            BuiltInRouteJsonFormatLabel.Text = UiStrings.Instance["RoutingBuiltInJsonError"];
+        }
     }
 
     private async void RoutingModeChanged(object sender, EventArgs e)
@@ -1690,17 +1803,8 @@ public partial class MainPage : ContentPage
         if (_loading || !_initialized) return;
         if (sender is not Picker picker || picker.SelectedItem is not LocalizedChoice value) return;
         _settings.RoutingMode = value.Value;
-        var oldLoading = _loading;
-        _loading = true;
-        try
-        {
-            var choices = (RoutingModePicker.ItemsSource as IEnumerable<LocalizedChoice>)?.ToArray();
-            var matching = choices?.FirstOrDefault(x => x.Value == value.Value);
-            RoutingModePicker.SelectedItem = matching;
-            RouteModeInRoutingPicker.SelectedItem = matching;
-        }
-        finally { _loading = oldLoading; }
         RefreshRoutingModePresentation();
+        RefreshActiveRoutingRuleChoices();
         await RunSafelyAsync(() => _store.SaveAsync(_settings), UiStrings.Instance["RoutingRuleError"]);
         UpdatePendingCoreChanges();
     }
@@ -1743,9 +1847,10 @@ public partial class MainPage : ContentPage
         _loading = true;
         RulePicker.ItemsSource = null;
         RulePicker.ItemsSource = _settings.RoutingRuleSets;
-        RulePicker.SelectedItem = _settings.RoutingRuleSets.FirstOrDefault(x => x.Id == _settings.SelectedRoutingRuleId)
+        RulePicker.SelectedItem = _settings.RoutingRuleSets.FirstOrDefault(x => x.Id == _settings.EditingRoutingRuleId)
             ?? _settings.RoutingRuleSets.FirstOrDefault();
         _loading = false;
+        RefreshActiveRoutingRuleChoices();
         ShowSelectedRule();
     }
     private void ShowSelectedRule()
@@ -1871,7 +1976,6 @@ public partial class MainPage : ContentPage
                 RouteStrategyPicker.SelectedItem as string ?? "AsIs");
             RoutingJsonEditor.Text = json;
             ruleSet.Json = json;
-            ActivateCustomRouting();
             await _store.SaveAsync(_settings);
         }, UiStrings.Instance["RoutingRuleError"]);
     }
@@ -1888,21 +1992,57 @@ public partial class MainPage : ContentPage
         Network = RouteNetworkPicker.SelectedItem as string ?? "tcp,udp"
     };
 
-    private void ActivateCustomRouting()
+    /// <summary>Refresh the policy-side rule selector without activating editor changes.</summary>
+    private void RefreshActiveRoutingRuleChoices()
     {
-        _settings.RoutingMode = "Custom";
-        var choices = RoutingModePicker.ItemsSource as IEnumerable<LocalizedChoice>;
-        var selected = choices?.FirstOrDefault(c => c.Value == "Custom");
-        if (selected is null) return;
-        var previous = _loading;
+        if (ActiveRoutingRulePicker is null) return;
+        var selectedId = (ActiveRoutingRulePicker.SelectedItem as RoutingRuleSet)?.Id
+            ?? _settings.SelectedRoutingRuleId;
+        var loading = _loading;
         _loading = true;
         try
         {
-            RoutingModePicker.SelectedItem = selected;
-            RouteModeInRoutingPicker.SelectedItem = selected;
+            ActiveRoutingRulePicker.ItemsSource = null;
+            ActiveRoutingRulePicker.ItemsSource = _settings.RoutingRuleSets.ToArray();
+            ActiveRoutingRulePicker.SelectedItem = _settings.RoutingRuleSets.FirstOrDefault(r => r.Id == selectedId)
+                ?? _settings.RoutingRuleSets.FirstOrDefault();
         }
-        finally { _loading = previous; }
-        RefreshRoutingModePresentation();
+        finally { _loading = loading; }
+        ActiveRoutingRuleSettingsPanel.IsVisible = CurrentRouteMode == "Custom";
+        var active = _settings.RoutingRuleSets.FirstOrDefault(r => r.Id == _settings.SelectedRoutingRuleId);
+        ActiveRoutingRuleStatusLabel.Text = _settings.AppliedRoutingRuleJson is not null && active is null
+            ? UiStrings.Instance["RoutingRuleMissingStatus"]
+            : active is null ? UiStrings.Instance["RoutingRuleNotAppliedStatus"]
+            : string.Format(UiStrings.Instance["RoutingRuleAppliedStatus"], active.Name);
+    }
+
+    private async void ApplyActiveRoutingRuleClicked(object sender, EventArgs e)
+    {
+        if (ActiveRoutingRulePicker.SelectedItem is not RoutingRuleSet selected) return;
+        await RunSafelyAsync(async () =>
+        {
+            // Keep the previous applied snapshot if validation fails.
+            var previousId = _settings.SelectedRoutingRuleId;
+            var previousJson = _settings.AppliedRoutingRuleJson;
+            try
+            {
+                CustomRoutingDeployment.Apply(_settings, selected.Id);
+                // Check the generated V4/V5 configuration before promoting a draft.
+                // This is an offline validation; the running core is never restarted here.
+                if (_settings.RoutingMode == "Custom" && !_settings.UseCustomConfig)
+                    ConfigFlavor.Build(_settings, _selected ?? throw new InvalidOperationException("Select a server first."));
+                await _store.SaveAsync(_settings);
+            }
+            catch
+            {
+                _settings.SelectedRoutingRuleId = previousId;
+                _settings.AppliedRoutingRuleJson = previousJson;
+                throw;
+            }
+            RefreshActiveRoutingRuleChoices();
+            UpdatePendingCoreChanges();
+            AppendLog(UiStrings.Instance["RoutingRuleSnapshotSaved"]);
+        }, UiStrings.Instance["RoutingRuleError"]);
     }
 
     private async Task ApplyVisualEditAsync(Func<string, string> edit, int nextIndex)
@@ -1916,13 +2056,12 @@ public partial class MainPage : ContentPage
             // not discard edits. Raw JSON still requires the explicit Save button.
             ruleSet.Json = json;
             RoutingJsonEditor.Text = json;
-            _settings.SelectedRoutingRuleId = ruleSet.Id;
-            ActivateCustomRouting();
+            _settings.EditingRoutingRuleId = ruleSet.Id;
             await _store.SaveAsync(_settings);
             UpdatePendingCoreChanges();
             _creatingVisualRule = false;
             RefreshVisualRules(nextIndex);
-            StatusLabel.Text = UiStrings.Instance["RoutingRuleSaved"];
+            AppendLog(UiStrings.Instance["RoutingRuleSaved"]);
         }, UiStrings.Instance["RoutingRuleError"]);
     }
 
@@ -1980,7 +2119,7 @@ public partial class MainPage : ContentPage
     private async void RulePickerChanged(object sender, EventArgs e)
     {
         if (_loading) return;
-        if (RulePicker.SelectedItem is RoutingRuleSet rule) _settings.SelectedRoutingRuleId = rule.Id;
+        if (RulePicker.SelectedItem is RoutingRuleSet rule) _settings.EditingRoutingRuleId = rule.Id;
         ShowSelectedRule();
         await RunSafelyAsync(() => _store.SaveAsync(_settings), UiStrings.Instance["RoutingRuleError"]);
     }
@@ -1994,8 +2133,7 @@ public partial class MainPage : ContentPage
                 Json = VisualRoutingEditor.DefaultJson
             };
             _settings.RoutingRuleSets.Add(rule);
-            _settings.SelectedRoutingRuleId = rule.Id;
-            ActivateCustomRouting();
+            _settings.EditingRoutingRuleId = rule.Id;
             await _store.SaveAsync(_settings);
             UpdatePendingCoreChanges();
             RefreshRules();
@@ -2014,23 +2152,23 @@ public partial class MainPage : ContentPage
                 V5ConfigBuilder.ConvertRoutingToV5(candidate);
             rule.Name = RuleNameEntry.Text?.Trim() ?? "Custom";
             rule.Json = RoutingJsonEditor.Text ?? VisualRoutingEditor.DefaultJson;
-            _settings.SelectedRoutingRuleId = rule.Id;
-            ActivateCustomRouting();
+            _settings.EditingRoutingRuleId = rule.Id;
             await _store.SaveAsync(_settings);
             UpdatePendingCoreChanges();
             RefreshRules();
-            StatusLabel.Text = L("路由规则已保存");
+            AppendLog(L("路由规则已保存"));
         }, "路由规则错误");
     }
     private async void DeleteRuleClicked(object sender, EventArgs e)
     {
         if (RulePicker.SelectedItem is not RoutingRuleSet rule) return;
         _settings.RoutingRuleSets.Remove(rule);
-        _settings.SelectedRoutingRuleId = _settings.RoutingRuleSets.FirstOrDefault()?.Id;
-        if (_settings.RoutingRuleSets.Count == 0) _settings.RoutingMode = "Smart";
-        RefreshRules(); ShowOptions();
+        _settings.EditingRoutingRuleId = _settings.RoutingRuleSets.FirstOrDefault()?.Id;
+        // The previously selected snapshot remains valid even if its editor entry is deleted.
+        // Only Proxy settings can choose/apply a replacement; do not change RoutingMode.
+        RefreshRules();
         await _store.SaveAsync(_settings);
-            UpdatePendingCoreChanges();
+        UpdatePendingCoreChanges();
     }
 
     private string SelectedPacPath
@@ -2100,7 +2238,7 @@ public partial class MainPage : ContentPage
                 _settings.SelectedPacFile.Equals("managed.pac", StringComparison.OrdinalIgnoreCase) &&
                 _settings.RoutingMode == "Smart")
             {
-                StatusLabel.Text = UiStrings.Instance["ManagedPacRawLocked"];
+                AppendLog(UiStrings.Instance["ManagedPacRawLocked"]);
                 return;
             }
             await File.WriteAllTextAsync(SelectedPacPath, PacScriptEditor.Text ?? "");
@@ -2111,7 +2249,7 @@ public partial class MainPage : ContentPage
                 _pac.ChangeFile(SelectedPacPath);
                 _proxy.EnablePac(_runningPacPort);
             }
-            StatusLabel.Text = L("PAC 已保存");
+            AppendLog(L("PAC 已保存"));
         }, "PAC 保存失败");
     }
     private void RefreshPacClicked(object sender, EventArgs e) => RefreshPacFiles();
@@ -2158,7 +2296,7 @@ public partial class MainPage : ContentPage
         {
             _pacTemplateStatusKey = "RoutingPendingPacDeferred";
             PacTemplateStatusLabel.Text = UiStrings.Instance["RoutingPendingPacDeferred"];
-            StatusLabel.Text = UiStrings.Instance["RoutingPendingPacDeferred"];
+            AppendLog(UiStrings.Instance["RoutingPendingPacDeferred"]);
             return;
         }
         await WriteManagedPacAsync();
@@ -2173,7 +2311,7 @@ public partial class MainPage : ContentPage
             : "已保存 managed.pac。选择 PAC 模式并连接代理后生效。";
         PacTemplateStatusLabel.Text = _pacTemplateStatusKey == "RoutingPendingPacDeferred"
             ? UiStrings.Instance["RoutingPendingPacDeferred"] : L(_pacTemplateStatusKey);
-        StatusLabel.Text = L("PAC 规则已生成");
+        AppendLog(L("PAC 规则已生成"));
         RefreshRoutingModePresentation();
     }, "生成 PAC 失败");
 

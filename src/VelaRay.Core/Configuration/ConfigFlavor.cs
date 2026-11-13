@@ -89,9 +89,7 @@ internal static class OutboundPlanner
             }
         }
         if (settings.RoutingMode != "Custom") return list;
-        var rules = settings.RoutingRuleSets.FirstOrDefault(r => r.Id == settings.SelectedRoutingRuleId)
-            ?? throw new ArgumentException("Select a custom routing rule set.");
-        var root = V5ConfigBuilder.ParseObject(rules.Json, "routing rules");
+        var root = V5ConfigBuilder.ParseObject(CustomRoutingDeployment.ResolveJson(settings), "routing rules");
         var references = new HashSet<string>(StringComparer.Ordinal);
         foreach (var key in new[] { "rules", "rule" })
             if (root[key] is JsonArray arr)

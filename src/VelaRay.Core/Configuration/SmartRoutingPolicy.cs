@@ -19,14 +19,11 @@ public static class SmartRoutingPolicy
         settings.RoutingMode == "Smart" &&
         string.Equals(settings.SmartUnmatchedRoute, UnmatchedProxy, StringComparison.Ordinal);
 
-    /// <summary>With Smart Proxy fallback, a managed PAC must not discard unmatched
-    /// requests before they reach V2Fly. Explicit PAC DIRECT entries still win, and
-    /// the ChinaSitesDirect template retains its offline China-domain exclusions.
-    /// Custom/handwritten PAC files are deliberately never rewritten.</summary>
-    public static string EffectiveManagedPacTemplate(ClientSettings settings) =>
-        ProxyUnmatched(settings) && settings.PacTemplate == PacTemplateGenerator.DirectByDefault
-            ? PacTemplateGenerator.ProxyByDefault
-            : settings.PacTemplate;
+    /// <summary>Keep the system PAC decision separate from the core Smart fallback.
+    /// PAC DirectByDefault means unlisted hosts must bypass the local proxy,
+    /// even when V2Fly uses Proxy for traffic that DOES reach its inbounds.
+    /// Never silently turn a selected DirectByDefault PAC into ProxyByDefault.</summary>
+    public static string EffectiveManagedPacTemplate(ClientSettings settings) => settings.PacTemplate;
 
     public static JsonObject BuildV4(ClientSettings settings)
     {

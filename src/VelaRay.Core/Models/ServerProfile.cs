@@ -134,7 +134,12 @@ public sealed class ClientSettings
     /// <summary>GeoIP database selected for BypassCN routing (full or CN+private only).</summary>
     public string GeoIpFile { get; set; } = "geoip-only-cn-private.dat";
     public List<RoutingRuleSet> RoutingRuleSets { get; set; } = [];
+    /// <summary>Rule-set ID explicitly selected on Proxy settings; independent of the rule editor.</summary>
     public string? SelectedRoutingRuleId { get; set; }
+    /// <summary>Immutable selected JSON snapshot used by the core until the user applies edits from Proxy settings.</summary>
+    public string? AppliedRoutingRuleJson { get; set; }
+    /// <summary>Last rule set opened in Routing & PAC; browsing/editing does not select it for the core.</summary>
+    public string? EditingRoutingRuleId { get; set; }
     public bool BalanceAllNodes { get; set; }
     public int PacPort { get; set; } = 18888;
     // Managed PAC generator settings; existing hand-edited PAC files are preserved.

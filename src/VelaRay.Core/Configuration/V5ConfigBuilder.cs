@@ -67,6 +67,15 @@ public static class V5ConfigBuilder
         ["metadataOnly"] = false
     };
 
+    /// <summary>Expose the built-in routing portion for the read-only editor preview.
+    /// Does not modify ClientSettings or alter production configuration generation.</summary>
+    public static JsonObject PreviewBuiltInRouting(ClientSettings options)
+    {
+        if (options.RoutingMode is not ("Smart" or "ProxyAll" or "Direct" or "BypassCN"))
+            throw new ArgumentException("Only built-in routing modes may be previewed.", nameof(options));
+        return BuildRouting(options, balanced: false);
+    }
+
     private static JsonObject BuildRouting(ClientSettings options, bool balanced)
     {
         JsonObject router = options.RoutingMode switch
@@ -86,7 +95,7 @@ public static class V5ConfigBuilder
                         new JsonObject { ["filePath"] = GeoDataAssets.NormalizeGeoIpFile(options.GeoIpFile), ["code"] = "private" },
                         new JsonObject { ["filePath"] = GeoDataAssets.NormalizeGeoIpFile(options.GeoIpFile), ["code"] = "cn" }) })
             },
-            "Custom" => ConvertRoutingToV5(ParseObject(options.RoutingRuleSets.First(x => x.Id == options.SelectedRoutingRuleId).Json, "custom router")),
+            "Custom" => ConvertRoutingToV5(ParseObject(CustomRoutingDeployment.ResolveJson(options), "custom router")),
             _ => throw new ArgumentException("Unknown routing mode.")
         };
         // V5 config uses router.rule and router.balancingRule (not V4 routing.rules).
@@ -363,7 +372,7 @@ public static class V5ConfigBuilder
         if (p.Transport == "tcp") ParseObject(p.TcpHeaderJson, "TCP header");
         if (p.Transport == "mkcp" && (p.KcpMtu < 576 || p.KcpMtu > 1460 || p.KcpTti < 10 || p.KcpTti > 100))
             throw new ArgumentException("mKCP MTU must be 576-1460 and TTI 10-100.");
-        if (o.RoutingMode == "Custom" && !o.RoutingRuleSets.Any(x => x.Id == o.SelectedRoutingRuleId))
+        if (o.RoutingMode == "Custom" && !CustomRoutingDeployment.HasAppliedRule(o))
             throw new ArgumentException("Select a custom routing rule set.");
     }
 }

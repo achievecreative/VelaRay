@@ -1,3 +1,5 @@
+> **Current layout update (2026-11-13):** The dedicated scrollbar-side column is now **10dp**, replacing the historical 18dp value described below. The actual visible gap is not guaranteed to be 10dp because native scrollbars may occupy part of this area.
+
 # Server card: name/address left alignment (VelaRay 2.7)
 
 ## Symptom

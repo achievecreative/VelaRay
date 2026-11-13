@@ -85,8 +85,8 @@
           </CollectionView.ItemsLayout>
           <CollectionView.ItemTemplate>
             <DataTemplate x:DataType="models:ServerProfile">
-              <!-- The 18dp empty column reserves ~8dp for an overlay scrollbar +
-                   at least 10dp visual clearance. It is OUTSIDE the card border. -->
+              <!-- Dedicated 10dp empty column OUTSIDE the server card border.
+                   Actual visible clearance varies with the native scrollbar width. -->
               <Grid ColumnDefinitions="*,10" HorizontalOptions="Fill">
                 <!-- CollectionView selection is applied to the template ROOT.
                      Target its child card, preserving independent connected status. -->
@@ -157,9 +157,9 @@
             </DataTemplate>
           </CollectionView.ItemTemplate>
         </CollectionView>
-        <Grid Grid.Row="4" ColumnDefinitions="*,*,*" ColumnSpacing="6">
+        <Grid Grid.Row="4" ColumnDefinitions="*,1.6*,*" ColumnSpacing="6">
           <Button Text="{Binding [ActionClone], Source={x:Static loc:UiStrings.Instance}}" Clicked="CloneClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_copy_neutral.png" ContentLayout="Left,6"/>
-          <Button Grid.Column="1" Text="{Binding [ActionShare], Source={x:Static loc:UiStrings.Instance}}" Clicked="ShareClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_share_neutral.png" ContentLayout="Left,6"/>
+          <Button Grid.Column="1" Text="{Binding [ActionValidateConfig], Source={x:Static loc:UiStrings.Instance}}" Clicked="TestClicked" Style="{StaticResource SmallButtonStyle}" FontSize="12" ImageSource="action_check_circle_neutral.png" ContentLayout="Left,6" AutomationId="check-config-server-action"/>
           <Button x:Name="DeleteProfileButton" Grid.Column="2" Text="{Binding [ActionDelete], Source={x:Static loc:UiStrings.Instance}}" Clicked="DeleteClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_delete_neutral.png" ContentLayout="Left,6"/>
         </Grid>
         <!-- Server editing is a distinct, node-scoped workspace at the bottom of the sidebar. -->
@@ -442,6 +442,15 @@
                Placeholder="{Binding [PlaceholderCorePath], Source={x:Static loc:UiStrings.Instance}}"/>
       </VerticalStackLayout>
     </Grid>
+    <VerticalStackLayout x:Name="ActiveRoutingRuleSettingsPanel" Spacing="6" IsVisible="False">
+      <Label Text="{Binding [FieldAppliedRoutingRuleSet], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
+      <FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Center" JustifyContent="Start">
+        <Picker x:Name="ActiveRoutingRulePicker" WidthRequest="280" ItemDisplayBinding="{Binding Name}" HorizontalOptions="Start" AutomationId="applied-routing-ruleset"/>
+        <Button Text="{Binding [ActionApplyRoutingRuleSet], Source={x:Static loc:UiStrings.Instance}}" Clicked="ApplyActiveRoutingRuleClicked" Margin="8,0,0,0" Style="{StaticResource SmallButtonStyle}" ImageSource="action_check_neutral.png" ContentLayout="Left,6" AutomationId="apply-routing-ruleset"/>
+      </FlexLayout>
+      <Label x:Name="ActiveRoutingRuleStatusLabel" Style="{StaticResource HintLabelStyle}" LineBreakMode="WordWrap"/>
+      <Label Text="{Binding [HelpApplyRoutingRuleSet], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+    </VerticalStackLayout>
     <VerticalStackLayout x:Name="SmartFallbackSettingsPanel" Spacing="5">
       <Label Text="{Binding [FieldSmartUnmatchedRoute], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
       <Picker x:Name="SmartFallbackPicker" SelectedIndexChanged="SmartFallbackChanged" AutomationId="smart-unmatched-settings"/>
@@ -568,7 +577,7 @@
 <Label Text="{Binding [SectionAdvancedRouting], Source={x:Static loc:UiStrings.Instance}}" FontAttributes="Bold" FontSize="17" Margin="0,10,0,3"/>
 <Border Style="{StaticResource InnerCardStyle}">
   <VerticalStackLayout Spacing="12">
-    <!-- Step 1: choose which routing mode is in effect. The custom rule set is only editable when Custom is selected. -->
+    <!-- Route policy is selected in Proxy settings; this page only views and edits rule definitions. -->
     <Grid ColumnDefinitions="*,232" ColumnSpacing="12">
       <VerticalStackLayout Spacing="4">
         <Label Text="{Binding [RoutingStep1], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource SectionTitleStyle}"/>
@@ -576,24 +585,72 @@
       </VerticalStackLayout>
       <VerticalStackLayout Grid.Column="1" Spacing="4">
         <Label Text="{Binding [FieldCoreRoutingMode], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
-        <Picker x:Name="RouteModeInRoutingPicker" WidthRequest="224" HorizontalOptions="End" ItemDisplayBinding="{Binding Label}" SelectedIndexChanged="RoutingModeChanged" AutomationId="route-mode-picker"/>
+        <Label x:Name="RouteModeReadOnlyLabel" FontSize="13" HorizontalOptions="End" VerticalOptions="Center" AutomationId="route-mode-readonly"/>
       </VerticalStackLayout>
     </Grid>
     <VerticalStackLayout x:Name="SmartFallbackRoutingPanel" Spacing="5" IsVisible="True">
       <Label Text="{Binding [FieldSmartUnmatchedRoute], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
-      <Picker x:Name="SmartFallbackRoutingPicker" HorizontalOptions="Fill" SelectedIndexChanged="SmartFallbackChanged" AutomationId="smart-unmatched-routing"/>
+      <Label x:Name="SmartFallbackReadOnlyLabel" FontSize="13" AutomationId="smart-unmatched-readonly"/>
       <Label Text="{Binding [HelpSmartUnmatchedRoute], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
     </VerticalStackLayout>
-    <!-- A read-only view of built-in routing, including the zero-rule ProxyAll default. -->
-    <Border x:Name="BuiltInRoutePreview" IsVisible="True" Stroke="{AppThemeBinding Light=#DCE7F3, Dark=#38516F}" StrokeThickness="1" Padding="12" StrokeShape="RoundRectangle 10">
-      <VerticalStackLayout Spacing="7">
-        <Label Text="{Binding [RoutingBuiltInPreviewTitle], Source={x:Static loc:UiStrings.Instance}}" FontAttributes="Bold" FontSize="14"/>
-        <Label x:Name="BuiltInRouteSummary" FontSize="13" LineBreakMode="WordWrap"/>
-        <Label Text="{Binding [RoutingBuiltInReadonly], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
-        <Label Text="{Binding [RoutingManagedPacOnly], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+    <!-- All four built-in routing policies are always visible and strictly read-only.
+         Browsing here does not change the active routing mode or apply a configuration. -->
+    <Border x:Name="BuiltInRoutePreview" IsVisible="True"
+            Stroke="{AppThemeBinding Light=#DCE7F3, Dark=#38516F}"
+            StrokeThickness="1" Padding="14" StrokeShape="RoundRectangle 10">
+      <VerticalStackLayout Spacing="10">
+        <Label Text="{Binding [RoutingBuiltInAllTitle], Source={x:Static loc:UiStrings.Instance}}"
+               Style="{StaticResource SectionTitleStyle}"/>
+        <Label Text="{Binding [RoutingBuiltInAllHelp], Source={x:Static loc:UiStrings.Instance}}"
+               Style="{StaticResource HintLabelStyle}" LineBreakMode="WordWrap"/>
+        <Grid ColumnDefinitions="*,*" RowDefinitions="Auto,Auto" ColumnSpacing="10" RowSpacing="10">
+          <Border Grid.Row="0" Grid.Column="0" Padding="12" StrokeShape="RoundRectangle 9"
+                  Stroke="{AppThemeBinding Light=#DBE5F1, Dark=#40516B}" StrokeThickness="1">
+            <VerticalStackLayout Spacing="5">
+              <Label Text="{Binding [RoutingBuiltInSmartTitle], Source={x:Static loc:UiStrings.Instance}}" FontAttributes="Bold" FontSize="13"/>
+              <Label x:Name="BuiltInSmartRuleSummary" FontSize="12" LineBreakMode="WordWrap"/>
+            </VerticalStackLayout>
+          </Border>
+          <Border Grid.Row="0" Grid.Column="1" Padding="12" StrokeShape="RoundRectangle 9"
+                  Stroke="{AppThemeBinding Light=#DBE5F1, Dark=#40516B}" StrokeThickness="1">
+            <VerticalStackLayout Spacing="5">
+              <Label Text="{Binding [RoutingBuiltInProxyAllTitle], Source={x:Static loc:UiStrings.Instance}}" FontAttributes="Bold" FontSize="13"/>
+              <Label x:Name="BuiltInProxyAllRuleSummary" FontSize="12" LineBreakMode="WordWrap"/>
+            </VerticalStackLayout>
+          </Border>
+          <Border Grid.Row="1" Grid.Column="0" Padding="12" StrokeShape="RoundRectangle 9"
+                  Stroke="{AppThemeBinding Light=#DBE5F1, Dark=#40516B}" StrokeThickness="1">
+            <VerticalStackLayout Spacing="5">
+              <Label Text="{Binding [RoutingBuiltInDirectTitle], Source={x:Static loc:UiStrings.Instance}}" FontAttributes="Bold" FontSize="13"/>
+              <Label x:Name="BuiltInDirectRuleSummary" FontSize="12" LineBreakMode="WordWrap"/>
+            </VerticalStackLayout>
+          </Border>
+          <Border Grid.Row="1" Grid.Column="1" Padding="12" StrokeShape="RoundRectangle 9"
+                  Stroke="{AppThemeBinding Light=#DBE5F1, Dark=#40516B}" StrokeThickness="1">
+            <VerticalStackLayout Spacing="5">
+              <Label Text="{Binding [RoutingBuiltInBypassCnTitle], Source={x:Static loc:UiStrings.Instance}}" FontAttributes="Bold" FontSize="13"/>
+              <Label x:Name="BuiltInBypassCnRuleSummary" FontSize="12" LineBreakMode="WordWrap"/>
+            </VerticalStackLayout>
+          </Border>
+        </Grid>
+        <Label Text="{Binding [RoutingBuiltInJsonLabel], Source={x:Static loc:UiStrings.Instance}}"
+               Style="{StaticResource FieldLabelStyle}"/>
+        <Picker x:Name="BuiltInRouteDetailPicker" ItemDisplayBinding="{Binding Label}"
+                AutomationId="builtin-route-detail-picker" SelectedIndexChanged="BuiltInRouteDetailChanged"
+                HorizontalOptions="Fill"/>
+        <Editor x:Name="BuiltInRouteJsonPreview" IsReadOnly="True" HeightRequest="185"
+                Placeholder="{Binding [RoutingBuiltInJsonPlaceholder], Source={x:Static loc:UiStrings.Instance}}"
+                FontFamily="{StaticResource AppCodeFontFamily}" FontSize="12"
+                AutomationId="builtin-route-json-readonly"/>
+        <Label x:Name="BuiltInRouteJsonFormatLabel" Style="{StaticResource HintLabelStyle}"/>
+        <Label Text="{Binding [RoutingBuiltInReadonly], Source={x:Static loc:UiStrings.Instance}}"
+               Style="{StaticResource HintLabelStyle}"/>
+        <Label Text="{Binding [RoutingManagedPacOnly], Source={x:Static loc:UiStrings.Instance}}"
+               Style="{StaticResource HintLabelStyle}"/>
       </VerticalStackLayout>
     </Border>
-    <VerticalStackLayout x:Name="CustomRouterPanel" Spacing="12" IsVisible="False">
+    <VerticalStackLayout x:Name="CustomRouterPanel" Spacing="12" IsVisible="True">
+      <Label Text="{Binding [RoutingCustomDraftsTitle], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource SectionTitleStyle}"/>
       <!-- The set name is deliberately at the top, before priority and rule fields. -->
       <Grid ColumnDefinitions="*,*,192" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="4">
         <Label Grid.Row="0" Grid.Column="0" Text="{Binding [FieldRouteRuleSet], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
@@ -604,6 +661,7 @@
         <Picker Grid.Row="1" Grid.Column="2" x:Name="RouteStrategyPicker" WidthRequest="188" HorizontalOptions="Start" SelectedIndexChanged="RouteStrategyChanged" AutomationId="dns-strategy-picker"/>
       </Grid>
       <Label Text="{Binding [HelpDomainStrategy], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
+      <Label Text="{Binding [HelpRoutingEditorNotApplied], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource HintLabelStyle}"/>
       <FlexLayout Direction="Row" Wrap="Wrap" AlignItems="Center">
         <Button Margin="0,0,6,6" Text="{Binding [ActionNewRouteSet], Source={x:Static loc:UiStrings.Instance}}" Clicked="AddRuleClicked" Style="{StaticResource PrimaryButtonStyle}" ImageSource="action_plus_primary.png" ContentLayout="Left,6"/>
         <Button Margin="0,0,6,6" Text="{Binding [ActionSaveRouteSet], Source={x:Static loc:UiStrings.Instance}}" Clicked="SaveRuleClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_save_neutral.png" ContentLayout="Left,6"/>
@@ -686,15 +744,12 @@
     </Grid>
     <!-- Fixed bottom connection controls and diagnostic output. -->
     <Border Grid.Row="2" Grid.ColumnSpan="2" BackgroundColor="{AppThemeBinding Light=#FFFFFF, Dark=#172233}" Stroke="{AppThemeBinding Light=#DFE7F1, Dark=#334155}" StrokeThickness="1">
-      <Grid Padding="20,10" RowDefinitions="Auto,*,Auto" RowSpacing="7">
-        <Grid ColumnDefinitions="Auto,Auto,Auto,*" ColumnSpacing="8">
-          <Button x:Name="ConnectionActionButton" Text="{Binding [ActionConnectSwitch], Source={x:Static loc:UiStrings.Instance}}" Clicked="ConnectionActionClicked" Style="{StaticResource PrimaryButtonStyle}" WidthRequest="156" AutomationId="connection-action-bottom" ImageSource="action_plug_primary.png" ContentLayout="Left,6"/>
-          <Button Grid.Column="1" Text="{Binding [ActionValidateConfig], Source={x:Static loc:UiStrings.Instance}}" Clicked="TestClicked" Style="{StaticResource SecondaryButtonStyle}" ImageSource="action_check_circle_neutral.png" ContentLayout="Left,6"/>
-          <Button Grid.Column="2" Text="{Binding [ActionViewRunningConfig], Source={x:Static loc:UiStrings.Instance}}" Clicked="ViewConfigClicked" Style="{StaticResource SecondaryButtonStyle}" WidthRequest="174" ImageSource="action_file_code_neutral.png" ContentLayout="Left,6"/>
-          <Label x:Name="StatusLabel" Grid.Column="3" Text="未连接" FontSize="13" FontAttributes="Bold" TextColor="{AppThemeBinding Light=#334155, Dark=#CBD5E1}" VerticalOptions="Center" HorizontalOptions="End"/>
-        </Grid>
+      <Grid Padding="20,10" RowDefinitions="*,Auto" RowSpacing="7">
+        <!-- The log panel has no duplicate connection/config actions or status text.
+             Global connection and config preview remain in the top toolbar; the
+             server-scoped config check lives beside Clone and Delete. -->
         <!-- Always-visible vertical scrollbar; the newest entry is at the bottom. -->
-        <ScrollView x:Name="LogScrollView" Grid.Row="1" Orientation="Vertical"
+        <ScrollView x:Name="LogScrollView" Grid.Row="0" Orientation="Vertical"
                     VerticalScrollBarVisibility="Always" AutomationId="runtime-log"
                     BackgroundColor="{AppThemeBinding Light=#F6F9FD, Dark=#0F172A}">
           <VerticalStackLayout Padding="8,5" Spacing="0">
@@ -706,7 +761,7 @@
         <!-- Three-zone bottom status bar: configured ports on the left, live proxy traffic
              in the true horizontal center, and the active runtime mode on the right.
              This is layout-only: sampling, label bindings, and core behavior are unchanged. -->
-        <Grid Grid.Row="2" ColumnDefinitions="*,2*,*" ColumnSpacing="14" MinimumHeightRequest="35">
+        <Grid Grid.Row="1" ColumnDefinitions="*,2*,*" ColumnSpacing="14" MinimumHeightRequest="35">
           <Label x:Name="ConfiguredPortsFooterLabel" Grid.Column="0" Text="" FontSize="11"
                  TextColor="{AppThemeBinding Light=#536780, Dark=#BBCBDD}"
                  LineBreakMode="TailTruncation" MaxLines="1" VerticalOptions="Center"/>

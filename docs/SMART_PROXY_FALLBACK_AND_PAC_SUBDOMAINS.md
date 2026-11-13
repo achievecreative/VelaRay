@@ -6,7 +6,7 @@
 2. 设置 **Smart 未匹配流量**：
    - **未匹配 → 直连**（默认，兼容旧配置）
    - **未匹配 → 代理**（新选项，主动开启）
-3. 系统代理选 **PAC** 且使用 `managed.pac`，应用会在连接时自动协调 PAC 默认出站，确保未匹配流量可以进入 V2Ray 内核。
+3. 系统代理选择 **PAC** 且使用 `managed.pac`，PAC 模板与 Smart 路由分别生效：PAC 选择“默认直连”时未匹配流量不进入内核；只有明确选择“默认代理”，或 PAC 代理列表命中时，才会把相应流量交给内核。
 4. 点击连接/切换按钮重新启动代理以应用修改；仅保存选项不强制切换正在运行的连接。
 
 配置字段：`ClientSettings.SmartUnmatchedRoute`，取值 `Direct` 或 `Proxy`；旧 JSON 缺少此字段时反序列化默认 `Direct`。
@@ -31,11 +31,11 @@ V4/V5 分别保留 `IPIfNonMatch` / `IpIfNonMatch`。V2Fly 采用**第一个 out
 
 - 使用 `Global`：遵循系统代理的应用都进入 V2Ray，然后按 Smart 策略分流。
 - 使用 `Manual`：不设置系统代理，仅主动连接到本地 HTTP / SOCKS5 的应用进入 V2Ray。
-- 使用 `PAC` 和自动生成的 `managed.pac`：启用 Smart Proxy 回退时，若用户选择了 `DirectByDefault` 模板，实际生成时自动采用 `ProxyByDefault`，使未匹配的网站也进入本地代理；同时保留用户显式 PAC 直连和代理列表的优先级。界面显示专门的提示。
+- 使用 `PAC` 和自动生成的 `managed.pac`：始终尊重用户显式选择的 PAC 模板，绝不因 Smart 未匹配选择 Proxy 而默默从 `DirectByDefault` 切换成 `ProxyByDefault`；PAC 决定是否进入本地代理，Smart 决定进入后使用的 outbound。
 - `ChinaSitesDirect` 模板继续保留其内置的国内网站直连名单，再由 V2Ray GeoSite/GeoIP 执行完整的 CN 分流。该模板仅含有限的离线示例，不等同于完整的中国网站列表。
 - **手写的自定义 PAC 文件**不会自动重写或解析。它如返回 `DIRECT`，请求仍然绕过 V2Ray，因此无法由新 Smart 默认策略接管。这是有意保留的兼容性边界。
 
-保留在设置 JSON 中的 `PacTemplate` 不会被覆写。例如，用户历史上选择 `DirectByDefault`，后来把 Smart fallback 设置为 `Proxy` 时，只在 `managed.pac` **生成阶段**有效模板变成 `ProxyByDefault`；回退为 `Direct` 后自动回到用户原先的模板选项。
+生成阶段同样保留用户 JSON 中的 `PacTemplate`，确保模式在 Global → PAC 切换后不会意外变成全站代理。
 
 在代理运行期间修改 Smart 策略不会自动断开、切换或重启。重新连接时生成新的运行时配置，重新生成 `managed.pac` 并设置 Windows PAC URL。
 

@@ -27,21 +27,22 @@ checks = {
         'SmartUnmatchedRoute { get; set; } = "Direct"' in model,
     'Smart Proxy fallback guards on routing mode and explicit value':
         'settings.RoutingMode == "Smart"' in policy and 'settings.SmartUnmatchedRoute, UnmatchedProxy' in policy,
-    'PAC auto-default delegates to same Smart policy':
+    'PAC selected template is not silently overridden by Smart':
         'EffectiveManagedPacTemplate(_settings)' in code and
-        'ProxyUnmatched(settings) && settings.PacTemplate == PacTemplateGenerator.DirectByDefault' in policy,
+        'EffectiveManagedPacTemplate(ClientSettings settings) => settings.PacTemplate;' in policy,
     'Both generators change first outbound without wildcard network routing':
         'SmartRoutingPolicy.ProxyUnmatched(settings)' in v4 and 'SmartRoutingPolicy.ProxyUnmatched(options)' in v5 and
         'if (options.RoutingMode == "Smart")' in v4 and 'if (options.RoutingMode == "Smart")' in v5,
     'Domain-boundary PAC suffix match, case-insensitive':
         "host.substring(host.length - name.length - 1) === '.' + name" in pac and
         "(host || '').toLowerCase()" in pac,
-    'Managed PAC generation and startup both use same effective fallback':
+    'Managed PAC generation and startup both use the selected template':
         code.count('SmartRoutingPolicy.EffectiveManagedPacTemplate(_settings)') >= 2 and
         'await WriteManagedPacAsync();' in code,
-    'Configuration exposed in proxy settings and routing screens':
-        'x:Name="SmartFallbackPicker"' in ui and 'x:Name="SmartFallbackRoutingPicker"' in ui and
-        'SmartFallbackChanged' in code and 'RefreshSmartUnmatchedChoices' in code,
+    'Smart fallback editable only in Proxy settings, read-only in Routing & PAC':
+        'x:Name="SmartFallbackPicker"' in ui and 'x:Name="SmartFallbackReadOnlyLabel"' in ui and
+        'SmartFallbackChanged' in code and 'RefreshSmartUnmatchedChoices' in code and
+        'SmartFallbackRoutingPicker' not in ui,
     'Applying selection does not trigger connection':
         'private async void SmartFallbackChanged' in code and
         'await RunSafelyAsync(() => _store.SaveAsync(_settings)' in code,
