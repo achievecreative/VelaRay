@@ -17,6 +17,7 @@ public partial class MainPage : ContentPage
 {
     private readonly ClientSettingsStore _store;
     private readonly V2RayCoreRunner _core;
+    private readonly SmartNodeLatencyProbe _latencyProbe;
     private readonly GeoDataUpdater _geoUpdater;
     private readonly CoreReleaseUpdater _coreUpdater;
     private readonly ISystemProxyService _proxy;
@@ -94,12 +95,13 @@ public partial class MainPage : ContentPage
     public MainPage(ClientSettingsStore store, V2RayCoreRunner core, GeoDataUpdater geoUpdater, CoreReleaseUpdater coreUpdater,
         ISystemProxyService proxy, IStartupService startup,
         ITrayService tray, PacHttpServer pac, IWindowShell shell, ICoreLocator locator,
-        IFileLocationService fileLocations)
+        IFileLocationService fileLocations, IChildProcessLifetime processLifetime)
     {
         InitializeComponent();
         _store = store; _core = core; _geoUpdater = geoUpdater; _coreUpdater = coreUpdater;
         _proxy = proxy; _startup = startup; _tray = tray; _pac = pac; _shell = shell; _locator = locator;
         _fileLocations = fileLocations;
+        _latencyProbe = new SmartNodeLatencyProbe(processLifetime);
         _runtimeLogs = new RuntimeLogStore(_store.LogFilePath);
         if (Application.Current is not null)
             Application.Current.RequestedThemeChanged += (_, _) =>
@@ -350,55 +352,64 @@ public partial class MainPage : ContentPage
         SemanticProperties.SetHint(EnglishLanguageButton, english ? "Selected" : "Activate English");
     }
 
-    // A separate explicit test avoids network traffic simply because the user
-    // opened the server list. UDP-based Hysteria2/mKCP/QUIC are NOT represented
-    // by a bogus TCP connect time.
-    private static bool SupportsTcpProbe(ServerProfile profile)
-    {
-        if (string.Equals(profile.Protocol, "hysteria2", StringComparison.OrdinalIgnoreCase)) return false;
-        var transport = profile.Transport?.Trim().ToLowerInvariant() ?? "";
-        return transport is "tcp" or "ws" or "grpc" or "httpupgrade" or "h2" or "http";
-    }
-
+    // Explicit, on-demand probing: TCP nodes keep their fast connect test;
+    // UDP transports use a temporary isolated V2Fly instance for a real
+    // proxied HTTPS response. Never touch the running core or system proxy.
     private async void MeasureLatenciesClicked(object sender, EventArgs e)
     {
         if (_checkingNodeLatencies) return;
         _checkingNodeLatencies = true;
         MeasureLatencyButton.IsEnabled = false;
-        var profiles = _profiles.ToArray();
-        using var concurrency = new SemaphoreSlim(4, 4);
+        // Capture editable node values now, before queuing concurrent checks.
+        var probes = _profiles.Select(profile => (
+            UiProfile: profile,
+            Snapshot: JsonSerializer.Deserialize<ServerProfile>(JsonSerializer.Serialize(profile))!
+        )).ToArray();
+        var executable = CoreExecutable;
+        using var concurrency = new SemaphoreSlim(SmartNodeLatencyProbe.MaxConcurrentProbes);
         try
         {
-            await Task.WhenAll(profiles.Select(async profile =>
+            await Task.WhenAll(probes.Select(async entry =>
             {
-                if (!SupportsTcpProbe(profile) || string.IsNullOrWhiteSpace(profile.Address) ||
-                    profile.Port is < 1 or > 65535)
-                {
-                    MainThread.BeginInvokeOnMainThread(() => profile.TcpLatencyMs = null);
-                    return;
-                }
+                var profile = entry.UiProfile;
+                var snapshot = entry.Snapshot;
                 await concurrency.WaitAsync();
                 try
                 {
-                    MainThread.BeginInvokeOnMainThread(() => profile.TcpLatencyMs = null);
-                    using var client = new TcpClient();
-                    using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
-                    var watch = Stopwatch.StartNew();
-                    await client.ConnectAsync(profile.Address.Trim(), profile.Port, timeout.Token);
-                    watch.Stop();
-                    var ms = Math.Max(1, watch.ElapsedMilliseconds);
-                    MainThread.BeginInvokeOnMainThread(() => profile.TcpLatencyMs = ms);
+                    var kind = SmartNodeLatencyProbe.Classify(snapshot);
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        profile.ProbeMethodDisplay = kind switch
+                        {
+                            NodeProbeTransport.Tcp => "TCP",
+                            NodeProbeTransport.Udp => "UDP",
+                            _ => ""
+                        };
+                        profile.MeasuredLatencyMs = null;
+                        profile.IsProbeFailure = false;
+                        profile.ProbeStatusText = L("节点测速中");
+                    });
+                    NodeProbeResult result;
+                    try { result = await _latencyProbe.ProbeAsync(snapshot, executable); }
+                    catch (Exception ex)
+                    {
+                        // One malformed or unreachable node must not stop the
+                        // remaining probes or interrupt a running proxy.
+                        AppendLog("Smart node probe failed: " + ex.GetType().Name);
+                        result = new(kind, NodeProbeOutcome.Unavailable);
+                    }
+                    await MainThread.InvokeOnMainThreadAsync(() =>
+                    {
+                        // The card intentionally displays one concise failure state,
+                        // regardless of whether the cause was timeout, refusal, or bad configuration.
+                        // Keep the probe outcome itself intact for diagnostics.
+                        var succeeded = result.Outcome == NodeProbeOutcome.Success && result.Milliseconds.HasValue;
+                        profile.MeasuredLatencyMs = succeeded ? result.Milliseconds : null;
+                        profile.ProbeStatusText = succeeded ? "" : L("节点测速超时");
+                        profile.IsProbeFailure = !succeeded;
+                    });
                 }
-                catch (Exception)
-                {
-                    // A failed manual probe is not a connection failure. Never
-                    // crash an async-void UI event because a TCP probe failed.
-                    MainThread.BeginInvokeOnMainThread(() => profile.TcpLatencyMs = null);
-                }
-                finally
-                {
-                    concurrency.Release();
-                }
+                finally { concurrency.Release(); }
             }));
         }
         finally
@@ -439,6 +450,9 @@ public partial class MainPage : ContentPage
         RefreshCoreVersionLabels();
         RefreshCoreUpdateButtons();
         UpdateTrafficLabels();
+        // Keep failure labels localized when the user changes language after a probe.
+        foreach (var profile in _profiles.Where(profile => profile.IsProbeFailure))
+            profile.ProbeStatusText = L("节点测速超时");
     }
 
     private string SelectedConfigVersion => ConfigFlavor.Normalize(_selected?.ConfigVersion);
@@ -1215,7 +1229,12 @@ public partial class MainPage : ContentPage
         p.QuicKey = QuicKeyEntry.Text?.Trim() ?? "";
         p.QuicHeader = QuicHeaderEntry.Text?.Trim() ?? "none";
         if (originalEndpoint != (p.Address, p.Port, p.Protocol, p.Transport))
-            p.TcpLatencyMs = null;
+        {
+            p.MeasuredLatencyMs = null;
+            p.ProbeStatusText = "";
+            p.IsProbeFailure = false;
+            p.ProbeMethodDisplay = "";
+        }
         p.NotifyCardChanged();
     }
 

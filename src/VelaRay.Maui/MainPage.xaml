@@ -137,8 +137,19 @@
                            TextColor="{AppThemeBinding Light=#63758B, Dark=#B6C7DC}"/>
                     <VerticalStackLayout Grid.RowSpan="2" Grid.Column="1" Spacing="3" HorizontalOptions="End"
                                          VerticalOptions="Center" MinimumWidthRequest="52">
-                      <!-- Never invent a latency: explicit TCP test populates this value. -->
-                      <Label Text="{Binding LatencyDisplay}" HorizontalTextAlignment="End" FontSize="11" TextColor="{AppThemeBinding Light=#418A6F, Dark=#8BC9A8}"/>
+                      <!-- Distinguish TCP connect time from UDP tunnel request duration. -->
+                      <HorizontalStackLayout Spacing="4" HorizontalOptions="End">
+                        <Label Text="{Binding ProbeMethodDisplay}" FontSize="9" VerticalOptions="Center"
+                               TextColor="{AppThemeBinding Light=#63758B, Dark=#B6C7DC}"/>
+                        <Label Text="{Binding LatencyDisplay}" HorizontalTextAlignment="End" FontSize="11"
+                               VerticalOptions="Center" TextColor="{AppThemeBinding Light=#418A6F, Dark=#8BC9A8}">
+                          <Label.Triggers>
+                            <DataTrigger TargetType="Label" Binding="{Binding IsProbeFailure}" Value="True">
+                              <Setter Property="TextColor" Value="{AppThemeBinding Light=#D92D20, Dark=#FF7373}"/>
+                            </DataTrigger>
+                          </Label.Triggers>
+                        </Label>
+                      </HorizontalStackLayout>
                       <HorizontalStackLayout IsVisible="{Binding IsConnected}" HorizontalOptions="End" Spacing="5">
                         <Border HeightRequest="16" WidthRequest="16" Stroke="#3159D6" StrokeThickness="1.7"
                                 StrokeShape="RoundRectangle 8" BackgroundColor="Transparent" Padding="0">
@@ -727,7 +738,7 @@
         <Label Text="{Binding [ToggleEditRawRouting], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/>
         <Switch x:Name="RouteRawModeSwitch" Toggled="RouteRawModeToggled" Scale="0.8" VerticalOptions="Center"/>
       </HorizontalStackLayout>
-      <Editor x:Name="RoutingJsonEditor" IsVisible="False" Placeholder="{Binding [PlaceholderRouteJson], Source={x:Static loc:UiStrings.Instance}}" AutoSize="TextChanges" HeightRequest="220" FontSize="13"/>
+      <Editor x:Name="RoutingJsonEditor" IsVisible="False" Placeholder="{Binding [PlaceholderRouteJson], Source={x:Static loc:UiStrings.Instance}}" AutoSize="Disabled" HeightRequest="220" FontSize="13"/>
     </VerticalStackLayout>
   </VerticalStackLayout>
 </Border>

@@ -262,8 +262,8 @@
   "SmartManagedPacNotice": "Smart unmatched → Proxy only affects traffic that already reaches V2Ray. It never overrides the PAC template. With PAC Direct by default, unlisted sites stay direct; with Proxy by default, unlisted sites are sent to the local proxy unless explicitly bypassed.",
   "HelpPacSubdomains": "Domain rules automatically match the root and every subdomain: google.com matches www.google.com and a.b.google.com, but not notgoogle.com.",
   "ServerRunningIndicatorShort": "In use",
-  "ActionTestTcpLatency": "Test",
-  "HelpTestTcpLatency": "Measure TCP connect time; UDP transports such as Hysteria2 are not measured",
+  "ActionTestTcpLatency": "Smart test",
+  "HelpTestTcpLatency": "Auto-detect transport: TCP connect time or UDP tunnel HTTPS response time through isolated V2Fly",
   "RoutingPendingReconnectHint": "Changes saved; the running core still uses the previous routing configuration. Reconnect to apply.",
   "ActionReconnectToApply": "Reconnect and apply",
   "RoutingPendingPacDeferred": "PAC domain changes are saved but not live. Reconnect to update PAC and core together.",
@@ -303,5 +303,11 @@
   "RoutingBuiltInJsonLabel": "Inspect built-in routing JSON (read-only)",
   "RoutingBuiltInJsonFormat": "{0} · Example generated for the selected node’s config version; not the running configuration.",
   "RoutingBuiltInJsonError": "Could not generate built-in routing preview.",
-  "RoutingCustomDraftsTitle": "Custom routing rules (edit and save only)"
+  "RoutingCustomDraftsTitle": "Custom routing rules (edit and save only)",
+  "节点测速中": "Testing…",
+  "节点测速超时": "Timeout",
+  "节点配置无效": "Invalid config",
+  "节点内核不可用": "Core unavailable",
+  "节点传输不支持": "Unsupported",
+  "节点测速失败": "Failed"
 }

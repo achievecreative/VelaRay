@@ -262,8 +262,8 @@
   "SmartManagedPacNotice": "Smart“未匹配 → 代理”只影响已经进入 V2Ray 的流量，不会覆盖 PAC 模板。PAC 选择“默认直连”时，未列入代理域名列表的网站仍然直连；选择“默认代理”时未列入直连列表的网站才会先进入本地代理。",
   "HelpPacSubdomains": "域名自动匹配本身和全部子域名，例如 google.com 可匹配 www.google.com、a.b.google.com；不会匹配 notgoogle.com。",
   "ServerRunningIndicatorShort": "使用中",
-  "ActionTestTcpLatency": "测速",
-  "HelpTestTcpLatency": "测试 TCP 连接耗时；Hysteria2 等 UDP 传输不支持此测试",
+  "ActionTestTcpLatency": "智能测速",
+  "HelpTestTcpLatency": "自动识别 TCP / UDP 传输：TCP 测建连时间，UDP 经独立 V2Fly 测真实代理请求耗时",
   "RoutingPendingReconnectHint": "配置已保存，但当前代理仍使用旧的内核路由；请手动重新连接以应用。",
   "ActionReconnectToApply": "重新连接并应用",
   "RoutingPendingPacDeferred": "PAC 域名与当前内核路由不同步，已保存为待应用；请重新连接。",
@@ -303,5 +303,11 @@
   "RoutingBuiltInJsonLabel": "查看内置规则 JSON（只读）",
   "RoutingBuiltInJsonFormat": "{0} · 根据当前选中节点的配置版本生成示例；并非正在运行的配置。",
   "RoutingBuiltInJsonError": "内置规则预览生成失败。",
-  "RoutingCustomDraftsTitle": "自定义路由规则（仅编辑并保存）"
+  "RoutingCustomDraftsTitle": "自定义路由规则（仅编辑并保存）",
+  "节点测速中": "测速中…",
+  "节点测速超时": "超时",
+  "节点配置无效": "配置无效",
+  "节点内核不可用": "内核不可用",
+  "节点传输不支持": "不支持",
+  "节点测速失败": "失败"
 }

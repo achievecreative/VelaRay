@@ -104,6 +104,63 @@ Check(locator.Locate(portableRoot, null) == Path.Combine(portableRoot, "v2ray-co
 Check(locator.Locate(portableRoot, "custom" + Path.DirectorySeparatorChar + expectedExecutable) ==
       Path.Combine(portableRoot, "custom", expectedExecutable), "relative override resolves beside the application");
 
+// Smart node probe classifies by TRANSPORT, not by guessed TCP support.
+var tcpProbeNode = new ServerProfile { Protocol = "vmess", Transport = "tcp", Address = "tcp.example.org", Port = 443 };
+var mkcpProbeNode = new ServerProfile { Protocol = "vmess", Transport = "mkcp", Address = "udp.example.org", Port = 443, Uuid = Guid.NewGuid().ToString() };
+var quicProbeNode = new ServerProfile { Protocol = "trojan", Transport = "quic", Address = "quic.example.org", Port = 443, Password = "secret" };
+var hy2ProbeNode = new ServerProfile { Protocol = "hysteria2", Transport = "hysteria2", Address = "hy2.example.org", Port = 443, TransportPassword = "test-secret" };
+Check(SmartNodeLatencyProbe.Classify(tcpProbeNode) == NodeProbeTransport.Tcp,
+      "TCP transport keeps TCP connect probe");
+Check(SmartNodeLatencyProbe.Classify(mkcpProbeNode) == NodeProbeTransport.Udp &&
+      SmartNodeLatencyProbe.Classify(quicProbeNode) == NodeProbeTransport.Udp &&
+      SmartNodeLatencyProbe.Classify(hy2ProbeNode) == NodeProbeTransport.Udp,
+      "mKCP / QUIC / native Hysteria2 use isolated UDP transport health checks");
+Check(SmartNodeLatencyProbe.Classify(new ServerProfile { Transport = "invalid" }) == NodeProbeTransport.Unsupported,
+      "unsupported transports are not silently probed as TCP");
+Check(SmartNodeLatencyProbe.MaxUdpAttempts == 2 &&
+      SmartNodeLatencyProbe.UdpRequestTimeout == TimeSpan.FromSeconds(5) &&
+      SmartNodeLatencyProbe.MaxConcurrentProbes == 2,
+      "UDP node probes are time-bounded and have limited concurrency");
+foreach (var version in new[] { ConfigFlavor.V4, ConfigFlavor.V5 })
+{
+    hy2ProbeNode.ConfigVersion = version;
+    var isolated = JsonNode.Parse(SmartNodeLatencyProbe.BuildIsolatedConfig(hy2ProbeNode, 23456))!;
+    var inbound = isolated["inbounds"]!.AsArray();
+    var outbound = isolated["outbounds"]!.AsArray();
+    Check(inbound.Count == 1 && (string?)inbound[0]!["listen"] == "127.0.0.1" &&
+          (string?)inbound[0]!["protocol"] == "http" && (int?)inbound[0]!["port"] == 23456,
+          version + " probe HTTP inlet binds loopback only");
+    Check(outbound.Count == 1 && (string?)outbound[0]!["protocol"] == "hysteria2" &&
+          (string?)outbound[0]!["tag"] == "latency-probe-out",
+          version + " probe has exactly the selected proxy outbound and no freedom fallback");
+    Check(isolated["routing"] is null && isolated["router"] is null,
+          version + " probe does not inherit routing or PAC rules");
+}
+Check(!System.Text.Json.JsonSerializer.Serialize(hy2ProbeNode).Contains("ProbeMethodDisplay") &&
+      !System.Text.Json.JsonSerializer.Serialize(hy2ProbeNode).Contains("ProbeStatusText"),
+      "probing visual state is not stored in server settings");
+
+// TCP probe is a real network connect, but never requires starting V2Fly.
+using (var lifetime = new ProbeTestProcessLifetime())
+{
+    var probe = new SmartNodeLatencyProbe(lifetime);
+    var localListener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+    localListener.Start();
+    try
+    {
+        var localPort = ((System.Net.IPEndPoint)localListener.LocalEndpoint).Port;
+        var localNode = new ServerProfile { Protocol = "vmess", Transport = "tcp", Address = "127.0.0.1", Port = localPort };
+        var actual = await probe.ProbeAsync(localNode, string.Empty);
+        Check(actual.Outcome == NodeProbeOutcome.Success && actual.Milliseconds is >= 1 &&
+              actual.Transport == NodeProbeTransport.Tcp, "TCP probe connects to a live local listener");
+    }
+    finally { localListener.Stop(); }
+    var missingCore = await probe.ProbeAsync(hy2ProbeNode, Path.Combine(Path.GetTempPath(), "nonexistent-velaray-core.exe"));
+    Check(missingCore.Outcome == NodeProbeOutcome.CoreUnavailable &&
+          missingCore.Transport == NodeProbeTransport.Udp,
+          "UDP probe reports missing core rather than a fake RTT");
+}
+
 // Reference-card properties are live-only and support the language/selection UI.
 var cardProfile = new ServerProfile { Name = "Example node", Protocol = "vmess", Address = "edge.example.net", Port = 443 };
 Check(cardProfile.ProtocolBadge == "vmess" && cardProfile.EndpointDisplay == "edge.example.net:443",
@@ -111,6 +168,20 @@ Check(cardProfile.ProtocolBadge == "vmess" && cardProfile.EndpointDisplay == "ed
 Check(cardProfile.LatencyDisplay == "—", "unmeasured latency is never a fabricated number");
 cardProfile.TcpLatencyMs = 28;
 Check(cardProfile.LatencyDisplay == "28 ms", "measured TCP connection time is formatted in milliseconds");
+var probeFailureStateNotified = false;
+cardProfile.PropertyChanged += (_, args) =>
+{
+    if (args.PropertyName == nameof(ServerProfile.IsProbeFailure)) probeFailureStateNotified = true;
+};
+cardProfile.MeasuredLatencyMs = null;
+cardProfile.ProbeStatusText = "超时";
+cardProfile.IsProbeFailure = true;
+Check(cardProfile.LatencyDisplay == "超时" && cardProfile.IsProbeFailure && probeFailureStateNotified,
+      "failed probes display Timeout with an observable red visual state");
+Check(!JsonSerializer.Serialize(cardProfile).Contains("IsProbeFailure"),
+      "probe failure visual state is not saved into the server configuration");
+cardProfile.IsProbeFailure = false;
+cardProfile.ProbeStatusText = "";
 Check(!JsonSerializer.Serialize(cardProfile).Contains("TcpLatencyMs") &&
       !JsonSerializer.Serialize(cardProfile).Contains("EndpointDisplay"),
       "server card visual-only fields are never persisted");
@@ -920,4 +991,11 @@ sealed class TestCoreArchiveHandler(byte[] bytes) : HttpMessageHandler
 {
     protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken) =>
         Task.FromResult(new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new ByteArrayContent(bytes) });
+}
+
+sealed class ProbeTestProcessLifetime : IChildProcessLifetime
+{
+    public void Attach(System.Diagnostics.Process process) =>
+        throw new InvalidOperationException("Unit-only process lifetime must never spawn V2Fly.");
+    public void Dispose() { }
 }

@@ -41,7 +41,8 @@ assert 'Text="✓"' in xaml and 'ServerRunningIndicatorShort' in xaml
 assert 'BackgroundColor" Value="{AppThemeBinding Light=#EDF3FF, Dark=#20324D}' in xaml
 assert 'Stroke" Value="{AppThemeBinding Light=#4E68FF, Dark=#87A3FF}' in xaml
 assert 'private async void MeasureLatenciesClicked' in code
-assert 'if (!SupportsTcpProbe(profile)' in code and 'TimeSpan.FromSeconds(3)' in code
+assert 'SmartNodeLatencyProbe.Classify(snapshot)' in code and '_latencyProbe.ProbeAsync(snapshot, executable)' in code
+assert 'private async void MeasureLatenciesClicked' in code
 assert 'private async void PendingReconnectClicked' in code
 assert 'await ToggleConnectionAsync(forceRestart: true);' in section('private async void PendingReconnectClicked','private void RefreshCoreAvailabilityMessage')
 assert 'RunningConfigChangeDetector.NeedsReconnect(' in code

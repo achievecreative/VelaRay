@@ -112,3 +112,8 @@ PAC files may hot reload.
 ## UX update: PAC / Global / Manual mode cards
 
 VelaRay 2.7 uses three visual system-proxy mode cards and six compact UX improvements without changing proxy behavior or settings storage. See [`docs/SIX_UX_PROXY_MODES_2_7.md`](docs/SIX_UX_PROXY_MODES_2_7.md).
+
+
+### Smart node speed test (2.7)
+
+The server list's **Smart test / 智能测速** button selects a probe by transport: TCP connections retain a 3-second TCP connect test; mKCP, QUIC, and Hysteria2 use a separate temporary V2Fly process and an HTTPS request through the actual UDP transport. Results are labeled `TCP` or `UDP` because their timings are not the same metric. Tests never switch the active server or change the Windows proxy. See `docs/SMART_NODE_SPEED_TEST_2_7.md` for details and limitations.

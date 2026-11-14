@@ -221,5 +221,11 @@
   "默认直连": "Direct by default",
   "国内网站直连": "Direct for Chinese sites",
   "服务器设置": "Server settings",
-  "系统代理模式已应用，无需重新连接": "System proxy mode applied without restarting V2Ray."
+  "系统代理模式已应用，无需重新连接": "System proxy mode applied without restarting V2Ray.",
+  "节点测速中": "Testing…",
+  "节点测速超时": "Timeout",
+  "节点配置无效": "Invalid config",
+  "节点内核不可用": "Core unavailable",
+  "节点传输不支持": "Unsupported",
+  "节点测速失败": "Failed"
 }

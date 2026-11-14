@@ -22,19 +22,69 @@ public sealed class ServerProfile : INotifyPropertyChanged
         }
     }
 
-    // UI-only card presentation data. Latency is an on-demand TCP connection test,
-    // not a V2Fly transport RTT; it is never persisted or filled with fake values.
-    private long? _tcpLatencyMs;
+    // UI-only probe results: TCP connect or UDP transport through a temporary
+    // isolated V2Fly instance. Never persist these values as server settings.
+    private long? _measuredLatencyMs;
+    [JsonIgnore]
+    public long? MeasuredLatencyMs
+    {
+        get => _measuredLatencyMs;
+        set
+        {
+            if (_measuredLatencyMs == value) return;
+            _measuredLatencyMs = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(MeasuredLatencyMs)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TcpLatencyMs)));
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LatencyDisplay)));
+        }
+    }
+
+    // Legacy UI/test binding compatibility; new UDP results use MeasuredLatencyMs.
     [JsonIgnore]
     public long? TcpLatencyMs
     {
-        get => _tcpLatencyMs;
+        get => MeasuredLatencyMs;
+        set => MeasuredLatencyMs = value;
+    }
+
+    private string _probeMethodDisplay = "";
+    private string _probeStatusText = "";
+    [JsonIgnore]
+    public string ProbeMethodDisplay
+    {
+        get => _probeMethodDisplay;
         set
         {
-            if (_tcpLatencyMs == value) return;
-            _tcpLatencyMs = value;
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(TcpLatencyMs)));
+            if (_probeMethodDisplay == value) return;
+            _probeMethodDisplay = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProbeMethodDisplay)));
+        }
+    }
+    [JsonIgnore]
+    public string ProbeStatusText
+    {
+        get => _probeStatusText;
+        set
+        {
+            if (_probeStatusText == value) return;
+            _probeStatusText = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ProbeStatusText)));
             PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(LatencyDisplay)));
+        }
+    }
+
+    // A failed or timed-out probe is shown in red. Keep this visual state
+    // separate from the localized label, so switching languages is safe.
+    private bool _isProbeFailure;
+    [JsonIgnore]
+    public bool IsProbeFailure
+    {
+        get => _isProbeFailure;
+        set
+        {
+            if (_isProbeFailure == value) return;
+            _isProbeFailure = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsProbeFailure)));
         }
     }
 
@@ -54,7 +104,8 @@ public sealed class ServerProfile : INotifyPropertyChanged
     }
 
     [JsonIgnore]
-    public string LatencyDisplay => _tcpLatencyMs is long ms ? $"{ms} ms" : "—";
+    public string LatencyDisplay => _measuredLatencyMs is long ms ? $"{ms} ms" :
+        string.IsNullOrEmpty(_probeStatusText) ? "—" : _probeStatusText;
 
     /// <summary>Refresh computed card properties after the editable server fields are committed.</summary>
     public void NotifyCardChanged()

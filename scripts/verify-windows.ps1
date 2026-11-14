@@ -47,6 +47,10 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Traffic statistics and 78dp server-card regression failed' }
     python scripts/check_server_card_text_alignment.py
     if ($LASTEXITCODE -ne 0) { throw 'Server-card name/address alignment regression failed' }
+    python scripts/check_smart_node_latency.py
+    if ($LASTEXITCODE -ne 0) { throw 'Smart node latency / isolated UDP probe source review failed' }
+    python scripts/check_multiline_editor_scrollbars.py
+    if ($LASTEXITCODE -ne 0) { throw 'Multiline Editor scrollbar regression check failed' }
     dotnet build src/VelaRay.Core/VelaRay.Core.csproj -c Release
     if ($LASTEXITCODE -ne 0) { throw 'Portable core compilation failed' }
     dotnet --version

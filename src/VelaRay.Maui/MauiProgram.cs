@@ -16,6 +16,18 @@ public static class MauiProgram
 #endif
         var builder = MauiApp.CreateBuilder();
         builder.UseMauiApp<App>();
+#if WINDOWS
+        // Native WinUI TextBox already contains a ScrollViewer. Show its own
+        // vertical scrollbar only when the text exceeds the bounded Editor;
+        // avoid wrapping Editors in another ScrollView inside the workspace.
+        Microsoft.Maui.Handlers.EditorHandler.Mapper.AppendToMapping(
+            "VelaRayMultilineEditorScrollbars", (handler, view) =>
+            {
+                Microsoft.UI.Xaml.Controls.ScrollViewer.SetVerticalScrollBarVisibility(
+                    handler.PlatformView,
+                    Microsoft.UI.Xaml.Controls.ScrollBarVisibility.Auto);
+            });
+#endif
         builder.Logging.AddDebug();
         // In .NET single-file mode AppContext.BaseDirectory may point to the extracted
         // bundle. Environment.ProcessPath identifies the original EXE that users copied.
