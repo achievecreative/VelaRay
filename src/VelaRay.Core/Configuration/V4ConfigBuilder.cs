@@ -12,19 +12,20 @@ public static class V4ConfigBuilder
     public static string Build(ClientSettings settings, ServerProfile selected)
     {
         V5ConfigBuilder.Validate(settings, selected);
+        var routingMode = EffectiveRoutingMode.Resolve(settings);
         var listen = settings.AllowLan ? "0.0.0.0" : "127.0.0.1";
         var outbounds = new JsonArray();
         var directOutbound = new JsonObject { ["tag"] = "direct", ["protocol"] = "freedom", ["settings"] = new JsonObject() };
         // V2Fly routes unmatched connections to the FIRST outbound. Preserve the
         // previous Direct fallback unless Smart/Proxy is explicitly selected.
-        if (settings.RoutingMode == "Smart" && !SmartRoutingPolicy.ProxyUnmatched(settings))
+        if (routingMode == "Smart" && !SmartRoutingPolicy.ProxyUnmatched(settings))
             outbounds.Add(directOutbound);
         foreach (var (profile, tag) in OutboundPlanner.Get(settings, selected))
         {
             OutboundPlanner.ValidateReferenced(settings, profile, tag);
             outbounds.Add(BuildOutbound(profile, tag));
         }
-        if (settings.RoutingMode != "Smart" || SmartRoutingPolicy.ProxyUnmatched(settings))
+        if (routingMode != "Smart" || SmartRoutingPolicy.ProxyUnmatched(settings))
             outbounds.Add(directOutbound);
         outbounds.Add(new JsonObject { ["tag"] = "block", ["protocol"] = "blackhole", ["settings"] = new JsonObject() });
         var sniffing = new JsonObject { ["enabled"] = settings.Sniffing, ["destOverride"] = new JsonArray("http", "tls") };
@@ -37,8 +38,16 @@ public static class V4ConfigBuilder
                 new JsonObject { ["tag"] = "http-in", ["protocol"] = "http", ["listen"] = listen,
                     ["port"] = settings.HttpPort, ["settings"] = new JsonObject(), ["sniffing"] = sniffing.DeepClone() }),
             ["outbounds"] = outbounds,
-            ["routing"] = BuildRouting(settings)
+            ["routing"] = BuildRouting(settings, routingMode)
         };
+        // PAC scripts use a dedicated loopback HTTP inbound, isolated from manual HTTP.
+        // Always listen so changing Windows proxy mode need not alter inbound layout.
+        ((JsonArray)config["inbounds"]!).Add(new JsonObject
+        {
+            ["tag"] = ExplicitProxyPolicy.PacHttpTag, ["protocol"] = "http",
+            ["listen"] = "127.0.0.1", ["port"] = settings.PacProxyPort,
+            ["settings"] = new JsonObject(), ["sniffing"] = sniffing.DeepClone()
+        });
         var dns = settings.DnsServers.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         if (dns.Length > 0) config["dns"] = new JsonObject { ["servers"] = new JsonArray(dns.Select(x => (JsonNode?)JsonValue.Create(x)).ToArray()) };
         return config.ToJsonString(Pretty);
@@ -65,7 +74,7 @@ public static class V4ConfigBuilder
         };
         stream[field] = transport switch
         {
-            "tcp" => new JsonObject { ["header"] = V5ConfigBuilder.ParseObject(p.TcpHeaderJson, "TCP header") },
+            "tcp" => BuildTcpSettings(p.TcpHeaderJson),
             "ws" => new JsonObject { ["path"] = p.WebSocketPath, ["headers"] = V5ConfigBuilder.ParseObject(p.WebSocketHeadersJson, "WebSocket headers") },
             "grpc" => new JsonObject { ["serviceName"] = p.GrpcServiceName },
             "http" => new JsonObject { ["path"] = p.Http2Path, ["host"] = Strings(p.Http2Hosts) },
@@ -99,6 +108,17 @@ public static class V4ConfigBuilder
         return result;
     }
 
+    // An unmodified TCP connection needs no header configuration. In particular,
+    // emitting `"header": {}` makes the V4 core loader fail with
+    // "type not found in JSON context". Keep custom HTTP header disguises intact.
+    private static JsonObject BuildTcpSettings(string? json)
+    {
+        var header = V5ConfigBuilder.ParseTcpHeader(json);
+        return header.Count == 0
+            ? new JsonObject()
+            : new JsonObject { ["header"] = header };
+    }
+
     private static JsonObject BuildServer(ServerProfile p) => new()
     {
         ["address"] = p.Address, ["port"] = p.Port, ["password"] = p.Password
@@ -113,9 +133,13 @@ public static class V4ConfigBuilder
         _ => throw new ArgumentException("Unsupported VMess encryption: " + value)
     };
 
-    public static JsonObject BuildRouting(ClientSettings options)
+    // Public preview deliberately describes the chosen routing policy, not the
+    // Global runtime override. The builder passes the effective mode separately.
+    public static JsonObject BuildRouting(ClientSettings options) => BuildRouting(options, options.RoutingMode);
+
+    private static JsonObject BuildRouting(ClientSettings options, string routingMode)
     {
-        JsonObject routing = options.RoutingMode switch
+        JsonObject routing = routingMode switch
         {
             "Smart" => SmartRoutingPolicy.BuildV4(options),
             "ProxyAll" => new JsonObject { ["domainStrategy"] = "AsIs", ["rules"] = new JsonArray() },
@@ -147,7 +171,7 @@ public static class V4ConfigBuilder
                 ["selector"] = new JsonArray(options.Profiles.Select(p => (JsonNode?)JsonValue.Create("node-" + p.Id)).ToArray()),
                 ["strategy"] = new JsonObject { ["type"] = "random" }
             });
-            if (options.RoutingMode == "Smart")
+            if (routingMode == "Smart")
             {
                 // Keep the first-outbound fallback (direct or selected proxy) intact.
                 // Explicit proxied PAC domains/IPs can use the balancer. Unmatched
@@ -163,6 +187,11 @@ public static class V4ConfigBuilder
             else
                 rules.Add(new JsonObject { ["type"] = "field", ["network"] = "tcp,udp", ["balancerTag"] = "balance" });
         }
+        // Highest priority: an explicitly configured proxy listener must not fall
+        // through to Smart/PAC/Custom direct rules. PAC's own http-in is excluded.
+        if (ExplicitProxyPolicy.NeedsForcedRule(routingMode))
+            rules.Insert(0, ExplicitProxyPolicy.V4Rule(
+                options.BalanceAllNodes && options.Profiles.Count > 1));
         return routing;
     }
 

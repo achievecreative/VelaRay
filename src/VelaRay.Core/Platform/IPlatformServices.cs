@@ -5,6 +5,8 @@ public interface ISystemProxyService
 {
     void EnableGlobal(int httpPort, int socksPort);
     void EnablePac(int pacPort);
+    /// <summary>Rebroadcast WinINET settings only if VelaRay still owns them; never overwrite third-party changes.</summary>
+    bool RefreshIfOwned();
     void Restore();
     void Disable();
     /// <summary>Recover a proxy backup after a previous unclean shutdown; safe to call repeatedly.</summary>

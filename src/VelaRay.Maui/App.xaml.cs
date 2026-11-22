@@ -2,6 +2,9 @@ using Microsoft.Extensions.DependencyInjection;
 using VelaRay.Core.Platform;
 using VelaRay.Core.Runtime;
 using VelaRay.Maui.Services;
+#if WINDOWS
+using Microsoft.Windows.System.Power;
+#endif
 
 namespace VelaRay.Maui;
 
@@ -38,6 +41,10 @@ public partial class App : Application
         _tray.ToggleRequested += () => MainThread.BeginInvokeOnMainThread(async () => await _page.ToggleConnectionAsync());
         _tray.ExitRequested += () => MainThread.BeginInvokeOnMainThread(_shell.Exit);
         _tray.Start();
+#if WINDOWS
+        try { PowerManager.SystemSuspendStatusChanged += OnSystemSuspendStatusChanged; }
+        catch (Exception ex) { System.Diagnostics.Debug.WriteLine("Power resume notifications unavailable: " + ex); }
+#endif
     }
 
     protected override Window CreateWindow(IActivationState? activationState)
@@ -51,9 +58,24 @@ public partial class App : Application
         return window;
     }
 
+#if WINDOWS
+    private void OnSystemSuspendStatusChanged(object? sender, object? args)
+    {
+        var status = PowerManager.SystemSuspendStatus;
+        if (status == SystemSuspendStatus.Entering)
+            MainThread.BeginInvokeOnMainThread(_page.NotifySystemSuspending);
+        else if (status is SystemSuspendStatus.AutoResume or SystemSuspendStatus.ManualResume)
+            MainThread.BeginInvokeOnMainThread(_page.NotifySystemResumed);
+    }
+#endif
+
     private void CleanupOnExit()
     {
         if (Interlocked.Exchange(ref _cleanupStarted, 1) != 0) return;
+#if WINDOWS
+        try { PowerManager.SystemSuspendStatusChanged -= OnSystemSuspendStatusChanged; } catch { }
+#endif
+        try { _page.CancelResumeRecovery(); } catch { }
         // Do not let a failing proxy restore prevent child process termination.
         // All of these operations are synchronous; no MAUI dispatcher is needed.
         try { _core.Dispose(); } catch { }

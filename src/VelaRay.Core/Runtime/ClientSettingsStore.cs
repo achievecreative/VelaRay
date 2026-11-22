@@ -77,7 +77,7 @@ public sealed class ClientSettingsStore
             Directory.CreateDirectory(SettingsDirectory);
             Directory.CreateDirectory(ConfigDirectory);
             Directory.CreateDirectory(PacDirectory);
-            Directory.CreateDirectory(LogsDirectory);
+            // Log directory is created lazily by RuntimeLogStore only on an actual disk write.
         }
         catch (UnauthorizedAccessException ex)
         {
@@ -113,6 +113,16 @@ public sealed class ClientSettingsStore
         var json = await File.ReadAllTextAsync(SettingsPath, ct);
         var settings = JsonSerializer.Deserialize<ClientSettings>(json, new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
             ?? new ClientSettings();
+        // Migrate the previous dedicated-manual-HTTP port into the new PAC proxy
+        // listener only if the user has not already set the new port.
+        using (var document = JsonDocument.Parse(json))
+        {
+            var props = document.RootElement;
+            if (!props.TryGetProperty(nameof(ClientSettings.PacProxyPort), out _) &&
+                props.TryGetProperty("ExplicitHttpPort", out var legacy) &&
+                legacy.TryGetInt32(out var port) && port is >= 1 and <= 65535)
+                settings.PacProxyPort = port;
+        }
         if (settings.Language is not ("zh-CN" or "en-US")) settings.Language = "zh-CN";
         settings.Profiles ??= [];
         foreach (var profile in settings.Profiles)

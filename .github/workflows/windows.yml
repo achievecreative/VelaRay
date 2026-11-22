@@ -1,4 +1,4 @@
-name: VelaRay Windows .NET 10 validation & portable EXE
+name: VelaRay Windows .NET 11 validation & portable EXE
 on:
   push:
   pull_request:
@@ -10,7 +10,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: '10.0.x'
+          dotnet-version: '11.0.x'
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -39,6 +39,8 @@ jobs:
         run: python scripts/check_smart_routing_contract.py
       - name: Smart Proxy fallback and managed PAC suffix checks
         run: python scripts/check_smart_proxy_pac_sync.py
+      - name: Verify .NET 11 / MAUI 11 migration contracts
+        run: python scripts/check_net11_maui_migration.py
       - name: Install MAUI Windows workload
         run: dotnet workload install maui-windows
       - name: Restore core tests
@@ -48,11 +50,11 @@ jobs:
       - name: Windows Job Object lifecycle regression (including force-kill)
         run: dotnet run --project tests/VelaRay.WindowsLifetimeTests/VelaRay.WindowsLifetimeTests.csproj -c Release
       - name: Restore Windows MAUI app
-        run: dotnet restore src/VelaRay.Maui/VelaRay.Maui.csproj -p:TargetFramework=net10.0-windows10.0.19041.0
+        run: dotnet restore src/VelaRay.Maui/VelaRay.Maui.csproj -p:TargetFramework=net11.0-windows10.0.19041.0
       - name: Build Windows MAUI client (Debug; fail on C# or XAML errors)
-        run: dotnet build src/VelaRay.Maui/VelaRay.Maui.csproj -c Debug -f net10.0-windows10.0.19041.0 --no-restore
+        run: dotnet build src/VelaRay.Maui/VelaRay.Maui.csproj -c Debug -f net11.0-windows10.0.19041.0 --no-restore
       - name: Build Windows MAUI client (Release; fail on C# or XAML errors)
-        run: dotnet build src/VelaRay.Maui/VelaRay.Maui.csproj -c Release -f net10.0-windows10.0.19041.0 --no-restore
+        run: dotnet build src/VelaRay.Maui/VelaRay.Maui.csproj -c Release -f net11.0-windows10.0.19041.0 --no-restore
       - name: Publish and verify standalone single-file VelaRay.exe
         shell: pwsh
         run: ./scripts/publish-windows.ps1 -Mode SingleFile

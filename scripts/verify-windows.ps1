@@ -5,6 +5,20 @@ $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 Push-Location $root
 try {
+    $sdkVersion = (& dotnet --version).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not $sdkVersion.StartsWith('11.')) {
+        throw "VelaRay now requires .NET 11 SDK (found: $sdkVersion). Install SDK 11.0.100+ and the maui-windows workload."
+    }
+    python scripts/check_net11_maui_migration.py
+    if ($LASTEXITCODE -ne 0) { throw '.NET 11 / MAUI 11 migration validation failed' }
+    python scripts/check_net11_localized_template_binding.py
+    if ($LASTEXITCODE -ne 0) { throw '.NET 11 localized server card compiled binding check failed' }
+    python scripts/check_v4_tcp_header_normalization.py
+    if ($LASTEXITCODE -ne 0) { throw 'VMess TCP V4/V5 header normalization regression failed' }
+    python scripts/check_net11_connection_delegate.py
+    if ($LASTEXITCODE -ne 0) { throw '.NET 11 connection action delegate and nullable handler check failed' }
+    python scripts/check_explicit_proxy_routing.py
+    if ($LASTEXITCODE -ne 0) { throw 'Explicit SOCKS/HTTP proxy routing check failed' }
     python scripts/static_check.py
     if ($LASTEXITCODE -ne 0) { throw 'Static check failed' }
     python scripts/audit_ux_localization.py
@@ -23,6 +37,12 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Log header actions and sidebar check-config regression failed' }
     python scripts/check_ui_logging_policy.py
     if ($LASTEXITCODE -ne 0) { throw 'Stable actions, language and bounded logging check failed' }
+    python scripts/check_file_logging_toggle_and_maui11_list.py
+    if ($LASTEXITCODE -ne 0) { throw 'Log-file toggle / MAUI 11 Windows CollectionView2 check failed' }
+    python scripts/check_resume_recovery_and_publish_compression.py
+    if ($LASTEXITCODE -ne 0) { throw 'Sleep/wake recovery and single-file compression source check failed' }
+    python scripts/check_initial_card_border_and_timeout.py
+    if ($LASTEXITCODE -ne 0) { throw 'First-render server card / localized timeout check failed' }
     python scripts/check_workspace_and_platform.py
     if ($LASTEXITCODE -ne 0) { throw 'Workspace and platform boundary check failed' }
     python scripts/check_pac_js.py
@@ -35,6 +55,8 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'Routing editor/policy separation check failed' }
     python scripts/check_proxy_mode_switch_and_pac_fallback.py
     if ($LASTEXITCODE -ne 0) { throw 'System proxy mode transition and PAC default regression failed' }
+    python scripts/check_auto_proxy_mode_restart.py
+    if ($LASTEXITCODE -ne 0) { throw 'Automatic proxy mode restart safety regression failed' }
     python scripts/check_reference_ui_and_pending_pac.py
     if ($LASTEXITCODE -ne 0) { throw 'Screenshot card layout / staged PAC apply check failed' }
     python scripts/check_six_ux_proxy_modes.py
@@ -63,10 +85,10 @@ try {
     dotnet run --project tests/VelaRay.WindowsLifetimeTests -c Release
     if ($LASTEXITCODE -ne 0) { throw 'Windows child-process crash survival test failed' }
     $project = 'src/VelaRay.Maui/VelaRay.Maui.csproj'
-    dotnet restore $project -p:TargetFramework=net10.0-windows10.0.19041.0
+    dotnet restore $project -p:TargetFramework=net11.0-windows10.0.19041.0
     if ($LASTEXITCODE -ne 0) { throw 'MAUI restore failed' }
     foreach ($configuration in @('Debug', 'Release')) {
-        dotnet build $project -c $configuration -f net10.0-windows10.0.19041.0 --no-restore
+        dotnet build $project -c $configuration -f net11.0-windows10.0.19041.0 --no-restore
         if ($LASTEXITCODE -ne 0) { throw "$configuration MAUI compilation failed" }
     }
     if (-not $SkipPublish) {

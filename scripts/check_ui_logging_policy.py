@@ -19,7 +19,7 @@ assert named['ChineseLanguageButton'].get('Clicked') == 'ChineseLanguageClicked'
 assert named['EnglishLanguageButton'].get('Clicked') == 'EnglishLanguageClicked'
 assert all(s in page for s in ('UpdateLanguageButtons()', 'UpdateLanguageButtons();', 'ScrollLogToBottom', 'ScrollToAsync(LogTailAnchor, ScrollToPosition.End, false)', 'SnapshotVisible()', 'ChangeLanguageAsync'))
 assert 'LogTextLabel.Text = string.Join(Environment.NewLine, _runtimeLogs.SnapshotVisible());' in page
-assert 'new RuntimeLogStore(_store.LogFilePath)' in page
+assert 'new RuntimeLogStore(_store.LogFilePath, enableFileLogging: false)' in page
 assert '_runtimeLogs.FlushNow(' not in page, 'Disconnected state must not call removed FlushNow API'
 assert 'private async Task StopCoreAndProxyAsync()' in page
 assert 'public const int MaxVisibleLines = 1_000;' in core

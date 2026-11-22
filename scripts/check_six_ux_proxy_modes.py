@@ -29,7 +29,7 @@ assert 'TopConnectionDot.BackgroundColor = Color.FromArgb(connected ?' in code
 assert 'ActiveNodeLabel.Text = connected ? RunningServerLabel : "—";' in code
 assert 'ConnectionPillStyle' in styles
 # 3. Connected marker separate from selected visual state.
-assert 'VisualState Name="Selected"' in xaml
+assert 'DataTrigger TargetType="Border" Binding="{Binding IsSelected}"' in xaml
 assert 'IsVisible="{Binding IsConnected}"' in xaml
 assert 'ServerRunningIndicatorShort' in xaml
 sel=code.split('private void ProfilesSelectionChanged',1)[1].split('private void RefreshProfiles',1)[0]

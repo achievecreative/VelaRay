@@ -22,14 +22,14 @@ assert card is not None and card.get('Grid.Column')=='0'
 assert card.get('MinimumHeightRequest')=='78'
 assert card.get('Margin') is None, 'Card margin must not substitute native item spacing / real gutter'
 assert '12,11,12,11' in etree.tostring(card,encoding='unicode')
-# Selected styling must target the actual card from the DataTemplate root.
-vs=template_root.find('m:VisualStateManager.VisualStateGroups/m:VisualStateGroup',namespaces=ns)
-assert vs is not None
-assert {s.get('Name') for s in vs.findall('m:VisualState',namespaces=ns)}=={'Normal','Selected'}
-for visual_state in vs.findall('m:VisualState',namespaces=ns):
-    setters=visual_state.findall('m:VisualState.Setters/m:Setter',namespaces=ns)
-    assert {s.get('Property') for s in setters}=={'Border.BackgroundColor','Border.Stroke'}
-    assert all(s.get('TargetName')=='ProfileCardBorder' for s in setters)
+# Selected styling must be data-bound at initial render (WinUI selection state
+# can be deferred until the first click).
+triggers=card.findall('m:Border.Triggers/m:DataTrigger',namespaces=ns)
+assert len(triggers)==1 and triggers[0].get('Binding')=='{Binding IsSelected}'
+assert triggers[0].get('Value')=='True'
+setters=triggers[0].findall('m:Setter',namespaces=ns)
+assert {s.get('Property') for s in setters}=={'BackgroundColor','Stroke'}
+assert card.get('Stroke') and card.get('StrokeThickness')=='1.5'
 assert card.get('{http://schemas.microsoft.com/winfx/2009/xaml}Name')=='ProfileCardBorder'
 footer=one('ConfiguredPortsFooterLabel').getparent()
 assert footer.tag.endswith('Grid')

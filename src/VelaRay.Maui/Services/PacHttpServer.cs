@@ -10,6 +10,8 @@ public sealed class PacHttpServer : IDisposable
     private TcpListener? _listener;
     private CancellationTokenSource? _cts;
     private volatile string _selectedFile = ""; // Request handlers see a hot-swapped file path.
+    public bool IsRunning => _listener is not null;
+    public string CurrentScriptPath => _selectedFile;
     public static string DefaultScript(int httpPort) => $$"""
         function FindProxyForURL(url, host) {
             if (isPlainHostName(host) || host == 'localhost' || shExpMatch(host, '*.local')) return 'DIRECT';

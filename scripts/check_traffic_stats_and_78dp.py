@@ -14,7 +14,7 @@ assert 'LinearItemsLayout Orientation="Vertical" ItemSpacing="2"' in xml
 assert 'Grid ColumnDefinitions="*,10" HorizontalOptions="Fill"' in xml
 for name in ('UploadSpeedLabel','DownloadSpeedLabel','TrafficTotalsLabel','TrafficAvailabilityLabel'):
     assert f'x:Name="{name}"' in xml and name in cs, name
-assert 'CoreTrafficStatistics.Enable(configJson, SelectedConfigVersion, candidate)' in cs
+assert 'CoreTrafficStatistics.Enable(configJson, launchingFormat, candidate)' in cs
 assert 'await File.WriteAllTextAsync(activePath, configJson);' in cs
 assert 'if (!launchedExternal)' in cs
 assert 'var configJson = await File.ReadAllTextAsync(activePath);' in cs

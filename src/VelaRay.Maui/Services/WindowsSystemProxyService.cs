@@ -42,6 +42,15 @@ public sealed class WindowsSystemProxyService(string settingsDirectory) : ISyste
         RecordAppliedSnapshot();
     }
 
+    public bool RefreshIfOwned()
+    {
+        if (_applied is null) return false;
+        using var key = OpenWritable();
+        if (!SameProxySettings(key, _applied)) return false;
+        Refresh();
+        return true;
+    }
+
     public void Disable()
     {
         using var key = OpenWritable();

@@ -20,6 +20,7 @@ public sealed class V2RayCoreRunner : IDisposable
     /// <summary>Absolute path passed to the running v2ray-core process, or null when stopped.</summary>
     public string? RunningConfigPath { get; private set; }
     public string? RunningConfigFormat { get; private set; }
+    public string? RunningExecutablePath { get; private set; }
 
     /// <summary>
     /// V2Fly's V5 config loader is named "jsonv5", not "json5". Always pass
@@ -123,6 +124,7 @@ public sealed class V2RayCoreRunner : IDisposable
             LogReceived?.Invoke($"V2Ray exited with code {code}.");
             RunningConfigPath = null;
             RunningConfigFormat = null;
+            RunningExecutablePath = null;
             if (!_stopping) UnexpectedExit?.Invoke();
         };
         try
@@ -134,6 +136,7 @@ public sealed class V2RayCoreRunner : IDisposable
             _process = process;
             RunningConfigPath = Path.GetFullPath(configPath);
             RunningConfigFormat = ConfigFlavor.Normalize(format);
+            RunningExecutablePath = Path.GetFullPath(executable);
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
             LogReceived?.Invoke($"Started protected v2ray-core PID {process.Id}.");
@@ -149,6 +152,7 @@ public sealed class V2RayCoreRunner : IDisposable
             if (ReferenceEquals(_process, process)) _process = null;
             RunningConfigPath = null;
             RunningConfigFormat = null;
+            RunningExecutablePath = null;
             try
             {
                 if (process.Id != 0 && !process.HasExited)
@@ -170,6 +174,7 @@ public sealed class V2RayCoreRunner : IDisposable
         _process = null;
         RunningConfigPath = null;
         RunningConfigFormat = null;
+        RunningExecutablePath = null;
         if (process is null) return;
         try
         {
@@ -188,6 +193,7 @@ public sealed class V2RayCoreRunner : IDisposable
         _stopping = true;
         RunningConfigPath = null;
         RunningConfigFormat = null;
+        RunningExecutablePath = null;
         if (_process is not null)
         {
             if (!_process.HasExited) _process.Kill(entireProcessTree: true);

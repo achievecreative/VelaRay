@@ -32,13 +32,15 @@ public sealed class RuntimeLogStore : IDisposable
     private long _currentFileBytes;
     private long _droppedPendingLines;
     private bool _fileLoggingFailed;
+    private bool _fileLoggingEnabled;
     private string? _fileWriteError;
     private bool _disposed;
 
     public RuntimeLogStore(string filePath, long maxFileBytes = DefaultMaxFileBytes,
         int maxArchiveFiles = DefaultArchiveFiles, TimeSpan? flushInterval = null,
         int maxPendingLines = DefaultMaxPendingLines,
-        int minimumWriteBatchLines = DefaultMinimumWriteBatchLines)
+        int minimumWriteBatchLines = DefaultMinimumWriteBatchLines,
+        bool enableFileLogging = true)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(filePath);
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(maxFileBytes);
@@ -48,6 +50,7 @@ public sealed class RuntimeLogStore : IDisposable
         if (minimumWriteBatchLines > maxPendingLines)
             throw new ArgumentException("Minimum batch cannot exceed the bounded pending buffer.", nameof(minimumWriteBatchLines));
         FilePath = Path.GetFullPath(filePath);
+        _fileLoggingEnabled = enableFileLogging;
         _maxFileBytes = maxFileBytes;
         _maxArchiveFiles = maxArchiveFiles;
         _maxPendingLines = maxPendingLines;
@@ -73,6 +76,38 @@ public sealed class RuntimeLogStore : IDisposable
         get { lock (_queueLock) return _pending.Count; }
     }
 
+    public bool FileLoggingEnabled
+    {
+        get { lock (_queueLock) return _fileLoggingEnabled; }
+    }
+
+    /// <summary>
+    /// Disable file persistence immediately, discarding pending records without writing them.
+    /// Serialize with the background writer so that no further disk writes can begin after
+    /// this method returns. Re-enabling only queues new entries (no backfill).
+    /// </summary>
+    public void SetFileLoggingEnabled(bool enabled)
+    {
+        lock (_fileLock)
+        {
+            lock (_queueLock)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (_fileLoggingEnabled == enabled) return;
+                _fileLoggingEnabled = enabled;
+                _pending.Clear();
+                _droppedPendingLines = 0;
+            }
+            if (!enabled)
+            {
+                // The last batch was already flushed by the writer, if any.
+                // Close an existing handle, but never write the discarded pending queue.
+                _writer?.Dispose();
+                _writer = null;
+            }
+        }
+    }
+
     public void Append(string line)
     {
         // Cap a pathological core output line, not just the number of lines.
@@ -85,7 +120,7 @@ public sealed class RuntimeLogStore : IDisposable
         {
             if (_disposed) return;
             AddVisible(entry);
-            if (_fileLoggingFailed) return;
+            if (!_fileLoggingEnabled || _fileLoggingFailed) return;
             if (_pending.Count >= _maxPendingLines)
             {
                 _pending.Dequeue();
@@ -125,7 +160,12 @@ public sealed class RuntimeLogStore : IDisposable
     {
         lock (_fileLock)
         {
-            lock (_queueLock) ObjectDisposedException.ThrowIf(_disposed, this);
+            lock (_queueLock)
+            {
+                ObjectDisposedException.ThrowIf(_disposed, this);
+                if (!_fileLoggingEnabled)
+                    throw new InvalidOperationException("File logging is disabled; logs cannot be exported to disk.");
+            }
             FlushPendingLocked(includePartialBatch: true);
             if (FileWriteError is { } error)
                 throw new IOException("Runtime logs could not be saved: " + error);
@@ -172,7 +212,7 @@ public sealed class RuntimeLogStore : IDisposable
         long dropped;
         lock (_queueLock)
         {
-            if (_fileLoggingFailed || _pending.Count == 0 ||
+            if (!_fileLoggingEnabled || _fileLoggingFailed || _pending.Count == 0 ||
                 (!includePartialBatch && _pending.Count < _minimumWriteBatchLines)) return;
             batch = _pending.ToArray();
             _pending.Clear();

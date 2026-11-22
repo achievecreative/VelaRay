@@ -27,7 +27,7 @@ assert 'EffectiveManagedPacTemplate(ClientSettings settings) => settings.PacTemp
 assert 'ProxyUnmatched(settings) && settings.PacTemplate' not in policy
 assert 'PAC Direct-by-default selection' in smoke
 assert 'PAC Proxy-by-default remains an explicit separate choice' in smoke
-assert 'system proxy mode alone does not require restarting the core' in smoke
+assert 'switching Smart PAC to Global forces ProxyAll and requires reconnect' in smoke
 assert 'string.Equals(runningProxyMode, current.ProxyMode' not in detector
 assert 'ConfigFlavor.Build(current, original)' in detector
 assert 'runningPacPort != current.PacPort' in detector
@@ -59,5 +59,5 @@ for code_ in ('zh-CN','en-US'):
     assert 'PAC' in resource['SmartManagedPacNotice']
 assert '系统代理模式已应用，无需重新连接' in json.loads(read('src/VelaRay.Maui/Resources/I18n/lookup.json'))
 print('PASS: 2dp server spacing, 10dp card-to-scrollbar rail, PAC template autonomy')
-print('PASS: mode change on Save uses WinINET + PAC only; core/routing pending stays deferred')
+print('PASS: mode-only Save hot-applies when routing matches; route-changing mode switches use guarded automatic restart')
 print('PASS: Global -> PAC clears manual system proxy; no silent missing-file proxy-all fallback')

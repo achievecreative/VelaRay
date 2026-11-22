@@ -22,6 +22,22 @@ public sealed class ServerProfile : INotifyPropertyChanged
         }
     }
 
+    // UI-only selection state: distinct from the running/connected node.
+    // Bind the server card border directly to this property because WinUI's
+    // CollectionView selection VisualState may not be applied on first render.
+    private bool _isSelected;
+    [JsonIgnore]
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            if (_isSelected == value) return;
+            _isSelected = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+        }
+    }
+
     // UI-only probe results: TCP connect or UDP transport through a temporary
     // isolated V2Fly instance. Never persist these values as server settings.
     private long? _measuredLatencyMs;
@@ -174,6 +190,9 @@ public sealed class ClientSettings
     public string? SelectedProfileId { get; set; }
     public int SocksPort { get; set; } = 1080;
     public int HttpPort { get; set; } = 1088;
+    /// <summary>HTTP listener exclusively for PAC-generated PROXY directives.
+    /// Independent from the explicit HTTP and SOCKS5 listeners; always configurable.</summary>
+    public int PacProxyPort { get; set; } = 1089;
     public bool AllowLan { get; set; }
     public bool EnableUdp { get; set; } = true;
     public bool Sniffing { get; set; } = true;
@@ -200,6 +219,8 @@ public sealed class ClientSettings
     public string PacProxyWebsites { get; set; } = "";
     public string DnsServers { get; set; } = "";
     public string LogLevel { get; set; } = "Warning";
+    /// <summary>Controls optional disk persistence only; the last 1,000 UI lines remain in memory.</summary>
+    public bool EnableFileLogging { get; set; } = true;
     public bool RestoreSystemProxy { get; set; } = true;
     public bool StartWithWindows { get; set; }
     public bool ConnectAtStartup { get; set; }

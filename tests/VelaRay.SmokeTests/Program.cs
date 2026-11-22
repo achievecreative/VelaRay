@@ -67,6 +67,47 @@ try
               "large pending batches are queued without synchronous producer disk I/O");
     }
 
+    // File persistence can be switched off while retaining only the latest UI lines.
+    // Nothing should be written during a disabled session, including on shutdown.
+    var disabledFile = Path.Combine(logTestRoot, "disabled.log");
+    using (var logs = new RuntimeLogStore(disabledFile,
+        flushInterval: TimeSpan.FromMilliseconds(50),
+        maxPendingLines: 5, minimumWriteBatchLines: 3,
+        enableFileLogging: false))
+    {
+        Check(!logs.FileLoggingEnabled, "disk logging can start disabled");
+        for (var i = 0; i < 1_250; i++) logs.Append("UI only " + i);
+        await Task.Delay(175);
+        Check(logs.VisibleCount == 1_000 && logs.PendingCount == 0 && !File.Exists(disabledFile),
+            "disabled logging retains only last 1k UI lines, never opens a log file");
+        try
+        {
+            _ = logs.ExportCurrentFile();
+            throw new InvalidOperationException("Export unexpectedly wrote while logging disabled");
+        }
+        catch (InvalidOperationException ex) when (ex.Message.Contains("File logging is disabled"))
+        {
+            Check(true, "disabled logging blocks on-demand file export");
+        }
+        logs.SetFileLoggingEnabled(true);
+        logs.Append("new persisted entry one");
+        logs.Append("new persisted entry two");
+        logs.SetFileLoggingEnabled(false);
+        await Task.Delay(175);
+        Check(!File.Exists(disabledFile) && logs.PendingCount == 0,
+            "turning off disk logging drops pending partial batches");
+        logs.SetFileLoggingEnabled(true);
+        logs.Append("new persisted entry three");
+        logs.Append("new persisted entry four");
+        logs.Append("new persisted entry five");
+        for (var i = 0; i < 40 && !File.Exists(disabledFile); i++)
+            await Task.Delay(50);
+        Check(File.Exists(disabledFile), "re-enabling disk logging persists a new complete batch");
+        var text = File.ReadAllText(disabledFile);
+        Check(text.Contains("new persisted entry five") && !text.Contains("new persisted entry one") &&
+              !text.Contains("UI only"), "re-enabled logging never backfills disabled or dropped entries");
+    }
+
     var overflowLogFile = Path.Combine(logTestRoot, "bounded.log");
     using (var logs = new RuntimeLogStore(overflowLogFile,
         flushInterval: TimeSpan.FromHours(1),
@@ -165,6 +206,22 @@ using (var lifetime = new ProbeTestProcessLifetime())
 var cardProfile = new ServerProfile { Name = "Example node", Protocol = "vmess", Address = "edge.example.net", Port = 443 };
 Check(cardProfile.ProtocolBadge == "vmess" && cardProfile.EndpointDisplay == "edge.example.net:443",
       "server card exposes protocol badge and host:port address");
+var selectionNotifications = 0;
+cardProfile.PropertyChanged += (_, e) =>
+{
+    if (e.PropertyName == nameof(ServerProfile.IsSelected)) selectionNotifications++;
+};
+Check(!cardProfile.IsSelected && !cardProfile.IsConnected,
+      "server selection and running state initially stay independent");
+cardProfile.IsSelected = true;
+cardProfile.IsSelected = true;
+Check(cardProfile.IsSelected && !cardProfile.IsConnected && selectionNotifications == 1,
+      "selected border state notifies the UI once without changing the running node");
+Check(!JsonSerializer.Serialize(cardProfile).Contains("IsSelected"),
+      "initial server selection visual state is not persisted to node settings");
+cardProfile.IsSelected = false;
+Check(!cardProfile.IsSelected && selectionNotifications == 2,
+      "deselecting the card restores its normal border immediately");
 Check(cardProfile.LatencyDisplay == "—", "unmeasured latency is never a fabricated number");
 cardProfile.TcpLatencyMs = 28;
 Check(cardProfile.LatencyDisplay == "28 ms", "measured TCP connection time is formatted in milliseconds");
@@ -216,8 +273,37 @@ Check(Pending(), "advanced core routing change is marked pending");
 liveSettings.RoutingMode = "Smart";
 Check(!Pending(), "restoring the running configuration clears pending state");
 liveSettings.ProxyMode = "Global";
-Check(!Pending(), "system proxy mode alone does not require restarting the core");
+Check(Pending(), "switching Smart PAC to Global forces ProxyAll and requires reconnect");
 liveSettings.ProxyMode = "PAC";
+Check(!Pending(), "returning from Global to previously running Smart PAC clears pending state");
+// A Save-triggered mode change may auto-restart ONLY if no unrelated settings
+// or hidden Smart/Custom/PAC draft is applied with it.
+var launchBaseline = JsonSerializer.Deserialize<ClientSettings>(JsonSerializer.Serialize(liveSettings))!;
+liveSettings.ProxyMode = "Global";
+Check(RunningConfigChangeDetector.IsModeOnlyChange(liveSettings, launchBaseline, liveJson,
+    liveNode.Id, false, "PAC", launchBaseline.PacPort),
+    "PAC Smart -> Global is safe to auto-restart with the originally running node");
+liveSettings.SmartUnmatchedRoute = SmartRoutingPolicy.UnmatchedProxy;
+Check(!RunningConfigChangeDetector.IsModeOnlyChange(liveSettings, launchBaseline, liveJson,
+    liveNode.Id, false, "PAC", launchBaseline.PacPort),
+    "pending Smart rule edits prevent automatic mode switch restart");
+liveSettings.SmartUnmatchedRoute = launchBaseline.SmartUnmatchedRoute;
+liveSettings.ProxyMode = "PAC";
+var globalBaseline = JsonSerializer.Deserialize<ClientSettings>(JsonSerializer.Serialize(liveSettings))!;
+globalBaseline.ProxyMode = "Global";
+var globalJson = ConfigFlavor.Build(globalBaseline, liveNode);
+Check(RunningConfigChangeDetector.IsModeOnlyChange(liveSettings, globalBaseline, globalJson,
+    liveNode.Id, false, "Global", globalBaseline.PacPort),
+    "Global -> PAC can auto-restart when routing selections are unchanged");
+liveSettings.PacDirectWebsites = "example.net";
+Check(!RunningConfigChangeDetector.IsModeOnlyChange(liveSettings, globalBaseline, globalJson,
+    liveNode.Id, false, "Global", globalBaseline.PacPort),
+    "Global routing must not hide staged PAC domain edits during auto restart");
+liveSettings.PacDirectWebsites = "";
+Check(!RunningConfigChangeDetector.IsModeOnlyChange(liveSettings, globalBaseline, globalJson,
+    liveNode.Id, true, "Global", globalBaseline.PacPort),
+    "external JSON can never be auto-restarted as an implicit proxy-only config");
+
 Check(RunningConfigChangeDetector.NeedsReconnect(liveSettings, liveJson, liveNode.Id,
     false, null, "PAC", liveSettings.PacPort+1), "PAC listener port change requires reconnect");
 var otherNode = new ServerProfile { Address = "other.example.org", TransportPassword = "password" };
@@ -407,6 +493,77 @@ options.Profiles.Remove(unrelatedInvalidVmess);
 
 Check((bool?)config["inbounds"]![0]!["settings"]!["udpEnabled"] == true, "V5 socks UDP");
 Check(config["log"]!["error"]!["level"]?.ToString() == "Warning", "V5 log level");
+
+// Regression: changing a new native Hysteria2 profile to plain VMess must not
+// retain the mandatory HY2 transport or TLS, which breaks non-TLS VMess/TCP.
+var (fromHy2Transport, fromHy2Tls) = ProfileCapabilities.ProtocolSwitchDefaults(
+    "hysteria2", "vmess", "hysteria2", true);
+Check(fromHy2Transport == "tcp" && !fromHy2Tls,
+    "switching native Hysteria2 to VMess defaults to plain TCP without TLS");
+var (existingTransport, existingTls) = ProfileCapabilities.ProtocolSwitchDefaults(
+    "vmess", "trojan", "tcp", true);
+Check(existingTransport == "tcp" && existingTls,
+    "existing explicit TCP/TLS settings are preserved when changing non-HY2 protocol");
+var (hy2Transport, hy2Tls) = ProfileCapabilities.ProtocolSwitchDefaults(
+    "vmess", "hysteria2", "tcp", false);
+Check(hy2Transport == "hysteria2" && hy2Tls,
+    "switching back to native Hysteria2 forces HY2 transport and TLS");
+
+var pureTcpNode = new ServerProfile
+{
+    Protocol = "vmess", Address = "tcp.example.org", Port = 12345,
+    Uuid = "934d4533-a99b-4d9e-981f-2d7b9497f088", Transport = "tcp",
+    TlsEnabled = false, TcpHeaderJson = "{\"type\":\"none\"}"
+};
+var pureTcpSettings = new ClientSettings { RoutingMode = "ProxyAll" };
+var v4PlainTcp = JsonNode.Parse(V4ConfigBuilder.Build(pureTcpSettings, new ServerProfile
+{
+    ConfigVersion = "V4", Protocol = pureTcpNode.Protocol, Address = pureTcpNode.Address,
+    Port = pureTcpNode.Port, Uuid = pureTcpNode.Uuid, Transport = pureTcpNode.Transport,
+    TlsEnabled = pureTcpNode.TlsEnabled, TcpHeaderJson = pureTcpNode.TcpHeaderJson
+}))!["outbounds"]![0]!;
+Check((string?)v4PlainTcp["streamSettings"]!["network"] == "tcp"
+    && (string?)v4PlainTcp["streamSettings"]!["security"] == "none"
+    && (string?)v4PlainTcp["settings"]!["vnext"]![0]!["users"]![0]!["id"] == pureTcpNode.Uuid,
+    "V4 VMess/TCP emits raw TCP, no TLS and the correct UUID");
+// Regression for V2Ray V4: header:{} is invalid because the TCP disguise
+// loader requires header.type. Empty/plain headers must generate tcpSettings:{}.
+foreach (var rawHeader in new[] { "", "  ", "{}", "{\"type\":\"none\"}" })
+{
+    pureTcpNode.TcpHeaderJson = rawHeader;
+    var v4Tcp = V4ConfigBuilder.BuildOutbound(pureTcpNode)["streamSettings"]!["tcpSettings"]!;
+    Check(v4Tcp is JsonObject v4TcpObject && v4TcpObject.Count == 0,
+        "V4 plain TCP does not emit an empty header object: " + rawHeader);
+    var v5Tcp = V5ConfigBuilder.BuildOutbound(pureTcpNode)["streamSettings"]!["transportSettings"]!;
+    Check(v5Tcp is JsonObject v5TcpObject && v5TcpObject.Count == 0,
+        "V5 plain TCP does not emit an empty header object: " + rawHeader);
+}
+pureTcpNode.TcpHeaderJson = "{\"type\":\"http\",\"request\":{\"path\":[\"/\"]}}";
+Check((string?)V4ConfigBuilder.BuildOutbound(pureTcpNode)["streamSettings"]!["tcpSettings"]!["header"]!["type"] == "http",
+    "V4 preserves explicit HTTP TCP disguise header");
+Check((string?)V5ConfigBuilder.BuildOutbound(pureTcpNode)["streamSettings"]!["transportSettings"]!["header"]!["type"] == "http",
+    "V5 preserves explicit non-default TCP disguise header");
+foreach (var invalidHeader in new[] { "{\"request\":{}}", "{\"type\":\"\"}" })
+{
+    pureTcpNode.TcpHeaderJson = invalidHeader;
+    try
+    {
+        V4ConfigBuilder.Build(new ClientSettings { RoutingMode = "ProxyAll" }, pureTcpNode);
+        throw new Exception("V4 accepted a non-empty TCP header without a valid type");
+    }
+    catch (ArgumentException ex)
+    {
+        Check(ex.Message.Contains("'type'"), "Invalid V4 TCP header produces an actionable error");
+    }
+}
+pureTcpNode.TcpHeaderJson = "{\"type\":\"none\"}";
+
+var v5PlainTcp = JsonNode.Parse(V5ConfigBuilder.Build(pureTcpSettings, pureTcpNode))!["outbounds"]![0]!;
+Check((string?)v5PlainTcp["streamSettings"]!["transport"] == "tcp"
+    && (string?)v5PlainTcp["streamSettings"]!["security"] == "none"
+    && ((JsonObject)v5PlainTcp["streamSettings"]!["transportSettings"]!).Count == 0
+    && (string?)v5PlainTcp["settings"]!["uuid"] == pureTcpNode.Uuid,
+    "V5 VMess/TCP emits raw TCP transport, no TLS and the correct UUID");
 
 var vmess = new ServerProfile { Protocol = "vmess", Address = "vmess.example.org", Port = 1443,
     Uuid = "934d4533-a99b-4d9e-981f-2d7b9497f088", Transport = "hysteria2", TransportPassword = "hy2pass" };
@@ -890,6 +1047,59 @@ Check(!balancedProxyV4["routing"]!["rules"]!.AsArray().Any(x => x?["balancerTag"
 Check(PacTemplateGenerator.ParseWebsites("google.com\n*.google.com\nhttps://www.google.com/test")
       .SequenceEqual(["google.com", "www.google.com"]),
       "PAC accepts a root domain and wildcard entries and deduplicates equivalent entries");
+// Global mode means remote proxy for ALL traffic that enters the local V2Ray
+// listeners; the saved PAC/Manual routing policy remains unchanged.
+foreach (var savedMode in new[] { "Smart", "BypassCN", "Direct", "Custom" })
+{
+    var globalSettings = new ClientSettings
+    {
+        ProxyMode = "Global", RoutingMode = savedMode,
+        SmartUnmatchedRoute = "Direct", Profiles = [smartServer]
+    };
+    Check(EffectiveRoutingMode.Resolve(globalSettings) == "ProxyAll",
+        $"Global overrides stored {savedMode} routing only when generating core config");
+    foreach (var generated in new[] {
+        JsonNode.Parse(V4ConfigBuilder.Build(globalSettings, smartServer))!,
+        JsonNode.Parse(V5ConfigBuilder.Build(globalSettings, smartServer))!
+    })
+    {
+        var outbounds = generated["outbounds"]!.AsArray();
+        Check((string?)outbounds[0]!["tag"] == "proxy" &&
+              (string?)outbounds[1]!["tag"] == "direct",
+              $"Global with stored {savedMode} uses proxy as default outbound before direct");
+        var rules = (generated["routing"]?["rules"] ?? generated["router"]?["rule"])!.AsArray();
+        Check(rules.Count == 0, $"Global suppresses {savedMode} direct exceptions in V4/V5 routing");
+    }
+    Check(globalSettings.RoutingMode == savedMode,
+        $"Global generated config never overwrites stored {savedMode} preference");
+    Check(GeoDataAssets.RequiredForDefaultRouting(globalSettings).Count == 0,
+        "Global-generated ProxyAll does not require unused Smart/BypassCN Geo assets");
+    globalSettings.ProxyMode = "PAC";
+    Check(EffectiveRoutingMode.Resolve(globalSettings) == savedMode,
+        "returning to PAC restores the selected routing policy");
+}
+{
+    // ProxyAll is already in effect: switching the Windows entry mode to Global
+    // must not forcibly restart the core if it does not change the JSON.
+    var sameSettings = new ClientSettings { ProxyMode = "PAC", RoutingMode = "ProxyAll", Profiles = [smartServer] };
+    var existingJson = ConfigFlavor.Build(sameSettings, smartServer);
+    sameSettings.ProxyMode = "Global";
+    Check(!RunningConfigChangeDetector.NeedsReconnect(sameSettings, existingJson,
+        smartServer.Id, false, null, "PAC", sameSettings.PacPort),
+        "PAC ProxyAll -> Global ProxyAll can update WinINET without a core restart");
+}
+{
+    var globalBalance = new ClientSettings
+    {
+        ProxyMode = "Global", RoutingMode = "Smart", BalanceAllNodes = true,
+        Profiles = [smartServer, extraServer]
+    };
+    var builtV4 = JsonNode.Parse(V4ConfigBuilder.Build(globalBalance, smartServer))!;
+    var builtV5 = JsonNode.Parse(V5ConfigBuilder.Build(globalBalance, smartServer))!;
+    Check(builtV4["routing"]!["rules"]!.AsArray().Any(r => r?["balancerTag"] is not null) &&
+          builtV5["router"]!["rule"]!.AsArray().Any(r => r?["balancingTag"] is not null),
+          "Global can balance proxy outbounds without Smart China-direct rules");
+}
 // V2Fly traffic statistics must remain optional, local-only, and routing-safe.
 var testTrafficStats = """
 {
@@ -982,6 +1192,112 @@ Check(CustomRoutingDeployment.ResolveJson(separateRoutingSettings) == activeJson
       V4ConfigBuilder.BuildRouting(separateRoutingSettings).ToJsonString().Contains("new.example"),
       "deleting an editor rule does not erase the selected snapshot");
 Console.WriteLine("Custom routing editing, snapshot persistence, and explicit application regression tests passed.");
+
+// Explicit application proxies are unconditional remote-only listeners.
+// PAC routes through its own inbound and continues to obey Smart or Custom rules.
+var explicitSettings = new ClientSettings
+{
+    RoutingMode = "Smart", SmartUnmatchedRoute = "Direct", ProxyMode = "PAC",
+    SocksPort = 1080, HttpPort = 1088, PacProxyPort = 1089,
+    PacPort = 18888, PacDirectWebsites = "google.com", Profiles = [smartServer]
+};
+Check(new ClientSettings().SocksPort == 1080 &&
+      new ClientSettings().HttpPort == 1088 &&
+      new ClientSettings().PacProxyPort == 1089,
+      "three independent proxy listeners use editable default ports");
+Check(JsonSerializer.Deserialize<ClientSettings>(JsonSerializer.Serialize(explicitSettings))?.PacProxyPort == 1089,
+      "dedicated PAC proxy port survives settings serialization");
+foreach (var v5 in new[] { false, true })
+{
+    var json = JsonNode.Parse(v5
+        ? V5ConfigBuilder.Build(explicitSettings, smartServer)
+        : V4ConfigBuilder.Build(explicitSettings, smartServer))!;
+    var routes = (v5 ? json["router"]!["rule"] : json["routing"]!["rules"])!.AsArray();
+    var forced = routes[0]!;
+    Check((string?)forced[v5 ? "tag" : "outboundTag"] == "proxy" &&
+          forced["inboundTag"]!.AsArray().Select(x => (string?)x).SequenceEqual(
+              new[] { "socks-in", "http-in" }),
+          $"{(v5 ? "V5" : "V4")} explicit SOCKS5 and HTTP are remote-only, ahead of Smart routing");
+    var pacIngress = json["inbounds"]!.AsArray().SingleOrDefault(x =>
+        (string?)x?["tag"] == ExplicitProxyPolicy.PacHttpTag);
+    Check(json["inbounds"]!.AsArray().Count == 3 &&
+          (string?)pacIngress?["listen"] == "127.0.0.1" &&
+          (int?)pacIngress?["port"] == 1089,
+          $"{(v5 ? "V5" : "V4")} independent PAC HTTP proxy stays loopback-only");
+    Check(routes.Skip(1).Any(x => x?.ToJsonString().Contains("google.com") == true),
+          $"{(v5 ? "V5" : "V4")} PAC routing still honors explicit direct domain rules");
+}
+// Moving between PAC, Manual and Global does not alter the listener layout.
+foreach (var mode in new[] { "PAC", "Manual", "Global" })
+{
+    explicitSettings.ProxyMode = mode;
+    foreach (var config in new[] { V4ConfigBuilder.Build(explicitSettings, smartServer),
+                                    V5ConfigBuilder.Build(explicitSettings, smartServer) })
+    {
+        var json = JsonNode.Parse(config)!;
+        Check(json["inbounds"]!.AsArray().Count == 3,
+              $"{mode} keeps the three proxy inbounds available");
+        var rules = (json["routing"]?["rules"] ?? json["router"]?["rule"])!.AsArray();
+        if (mode == "Global")
+            Check(rules.Count == 0, "Global mode uses ProxyAll with no redundant override");
+        else
+            Check(rules[0]!["inboundTag"]!.AsArray().Select(x => (string?)x)
+                  .SequenceEqual(new[] { "socks-in", "http-in" }),
+                  $"{mode} forces only explicit inbound traffic remotely");
+    }
+}
+explicitSettings.ProxyMode = "PAC";
+explicitSettings.PacProxyPort = 11999;
+foreach (var config in new[] { V4ConfigBuilder.Build(explicitSettings, smartServer),
+                                V5ConfigBuilder.Build(explicitSettings, smartServer) })
+{
+    var json = JsonNode.Parse(config)!;
+    Check(json["inbounds"]!.AsArray().Any(x => (int?)x?["port"] == 11999),
+          "custom PAC proxy port is written to the core configuration");
+}
+Check(PacTemplateGenerator.Generate(PacTemplateGenerator.ProxyByDefault, "", "", 11999)
+      .Contains("PROXY 127.0.0.1:11999"),
+      "PAC script PROXY directive uses only the configurable dedicated PAC proxy port");
+explicitSettings.PacProxyPort = explicitSettings.HttpPort;
+try
+{
+    _ = V4ConfigBuilder.Build(explicitSettings, smartServer);
+    throw new Exception("Expected duplicate PAC proxy port failure");
+}
+catch (ArgumentException ex) when (ex.Message.Contains("ports must be distinct"))
+{
+    Check(true, "PAC proxy port conflict is rejected before core startup");
+}
+explicitSettings.PacProxyPort = 1089;
+explicitSettings.BalanceAllNodes = true;
+explicitSettings.Profiles.Add(extraServer);
+foreach (var v5 in new[] { false, true })
+{
+    var json = JsonNode.Parse(v5
+        ? V5ConfigBuilder.Build(explicitSettings, smartServer)
+        : V4ConfigBuilder.Build(explicitSettings, smartServer))!;
+    var rule = (v5 ? json["router"]!["rule"] : json["routing"]!["rules"])![0]!;
+    Check((string?)rule[v5 ? "balancingTag" : "balancerTag"] == "balance",
+          "explicit proxy routing continues to respect the enabled node balancer");
+}
+// Legacy settings: the old manual HTTP port is reused as the new PAC proxy
+// port only when an explicit new-style port is not already present.
+var legacyRoot = Path.Combine(Path.GetTempPath(), "VelaRayLegacyPorts-" + Guid.NewGuid().ToString("N"));
+try
+{
+    var store = new ClientSettingsStore(legacyRoot);
+    Directory.CreateDirectory(store.SettingsDirectory);
+    await File.WriteAllTextAsync(store.SettingsPath, "{\"ExplicitHttpPort\":12089,\"ForceExplicitProxy\":false}");
+    var migrated = await store.LoadAsync();
+    Check(migrated.PacProxyPort == 12089, "older dedicated HTTP port is migrated to PAC proxy port");
+    await store.SaveAsync(migrated);
+    var saved = await File.ReadAllTextAsync(store.SettingsPath);
+    Check(saved.Contains("\"PacProxyPort\": 12089") &&
+          !saved.Contains("ExplicitHttpPort") && !saved.Contains("ForceExplicitProxy"),
+          "removed explicit-proxy switch and legacy property are not persisted again");
+}
+finally { if (Directory.Exists(legacyRoot)) Directory.Delete(legacyRoot, recursive: true); }
+Console.WriteLine("Dedicated explicit SOCKS5/HTTP and PAC-only HTTP routing regression tests passed.");
 
 Console.WriteLine("Smart Proxy fallback/PAC synchronization regression tests passed.");
 Console.WriteLine("Smart routing V4/V5 direct-fallback regression tests passed.");

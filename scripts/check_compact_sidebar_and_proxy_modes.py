@@ -39,7 +39,7 @@ assert 'RowSpacing="6"' in items
 assert items.count('FontAttributes="Bold"')==1
 for binding in ('Name','ProtocolBadge','EndpointDisplay','LatencyDisplay','IsConnected'):
     assert ('{Binding %s}' % binding) in items
-assert 'VisualState Name="Selected"' in items
+assert 'DataTrigger TargetType="Border" Binding="{Binding IsSelected}"' in items
 
 # Three modes: all contain wrapped descriptions and titles. Responsive columns never overflow.
 modegrid=named('ProxyModeCardsGrid')

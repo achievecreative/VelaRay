@@ -56,4 +56,4 @@ if not all((R/item).exists() for item in ('src/VelaRay.Core/VelaRay.Core.csproj'
 if errors:
     print('\n'.join('FAIL '+e for e in errors));sys.exit(1)
 print(f'PASS: VelaRay XML/JSON, UI handlers, locale keys, resources, and legacy-code removal checks')
-print('NOTE: This is not a .NET 10 or Windows MAUI compiler.')
+print('NOTE: This is not a .NET 11 or Windows MAUI compiler.')

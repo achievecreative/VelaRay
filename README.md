@@ -1,6 +1,6 @@
 # VelaRay
 
-A Windows-only .NET 10 / .NET MAUI client for the official **V2Fly v2ray-core**. It supports modern VMess, Trojan and Hysteria2 profiles, with V2Fly **JSON V4 (`json`)** and **JSON V5 (`jsonv5`)** outputs. No Xray or sing-box dependency is required.
+A Windows-only .NET 11 / .NET MAUI client for the official **V2Fly v2ray-core**. It supports modern VMess, Trojan and Hysteria2 profiles, with V2Fly **JSON V4 (`json`)** and **JSON V5 (`jsonv5`)** outputs. No Xray or sing-box dependency is required.
 
 
 ## Smart 代理回退与 PAC 子域名匹配（2.7）
@@ -40,7 +40,7 @@ Direct commands:
 
 ```powershell
 dotnet run --project tests/VelaRay.SmokeTests -c Release
-dotnet build src/VelaRay.Maui/VelaRay.Maui.csproj -c Release -f net10.0-windows10.0.19041.0
+dotnet build src/VelaRay.Maui/VelaRay.Maui.csproj -c Release -f net11.0-windows10.0.19041.0
 ```
 
 ## Portable storage
@@ -117,3 +117,27 @@ VelaRay 2.7 uses three visual system-proxy mode cards and six compact UX improve
 ### Smart node speed test (2.7)
 
 The server list's **Smart test / 智能测速** button selects a probe by transport: TCP connections retain a 3-second TCP connect test; mKCP, QUIC, and Hysteria2 use a separate temporary V2Fly process and an HTTPS request through the actual UDP transport. Results are labeled `TCP` or `UDP` because their timings are not the same metric. Tests never switch the active server or change the Windows proxy. See `docs/SMART_NODE_SPEED_TEST_2_7.md` for details and limitations.
+
+## .NET 11 / .NET MAUI 11 migration
+
+The application now targets the stable **.NET 11 SDK 11.0.100+** and
+**.NET MAUI 11.0.10** on Windows (`net11.0-windows10.0.19041.0`).
+Install the `.NET MAUI development` workload (or `dotnet workload install maui-windows`)
+on a Windows machine, then run `./scripts/verify-windows.ps1 -SkipPublish`.
+
+The Windows `CollectionView2` handler is enabled through
+`UseWindowsCollectionView2Handler=true`. Verify server card layout, scrolling
+and first-render selection on Windows; see
+[NET11_MAUI11_MIGRATION.md](docs/NET11_MAUI11_MIGRATION.md).
+This change does **not**
+add macOS or Linux desktop support.
+
+## Runtime logging and .NET MAUI 11 lists
+
+**Proxy settings → Enable log file writing** is enabled by default. Turning it off
+retains at most 1,000 in-memory UI messages and prevents new `logs/app.log`
+writes; pre-existing files are not removed. See
+[`docs/LOG_TOGGLE_AND_COLLECTIONVIEW2_2_7.md`](docs/LOG_TOGGLE_AND_COLLECTIONVIEW2_2_7.md).
+
+Windows uses the .NET MAUI 11 `CollectionView2` handler; verify server list
+spacing, scrolling, first-render borders and selection after building on Windows.

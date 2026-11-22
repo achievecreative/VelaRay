@@ -16,7 +16,7 @@ public static class GeoDataAssets
     };
 
     public static IReadOnlyList<string> RequiredForDefaultRouting(ClientSettings settings) =>
-        (settings.RoutingMode is "BypassCN" or "Smart")
+        (EffectiveRoutingMode.Resolve(settings) is "BypassCN" or "Smart")
             ? ["geosite.dat", NormalizeGeoIpFile(settings.GeoIpFile)]
             : [];
 

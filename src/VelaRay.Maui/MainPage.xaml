@@ -88,28 +88,19 @@
               <!-- Dedicated 10dp empty column OUTSIDE the server card border.
                    Actual visible clearance varies with the native scrollbar width. -->
               <Grid ColumnDefinitions="*,10" HorizontalOptions="Fill">
-                <!-- CollectionView selection is applied to the template ROOT.
-                     Target its child card, preserving independent connected status. -->
-                <VisualStateManager.VisualStateGroups>
-                  <VisualStateGroup Name="CommonStates">
-                    <VisualState Name="Normal">
-                      <VisualState.Setters>
-                        <Setter TargetName="ProfileCardBorder" Property="Border.BackgroundColor" Value="{AppThemeBinding Light=#FFFFFF, Dark=#172233}"/>
-                        <Setter TargetName="ProfileCardBorder" Property="Border.Stroke" Value="{AppThemeBinding Light=#DCE4F2, Dark=#3C4C60}"/>
-                      </VisualState.Setters>
-                    </VisualState>
-                    <VisualState Name="Selected">
-                      <VisualState.Setters>
-                        <Setter TargetName="ProfileCardBorder" Property="Border.BackgroundColor" Value="{AppThemeBinding Light=#EDF3FF, Dark=#20324D}"/>
-                        <Setter TargetName="ProfileCardBorder" Property="Border.Stroke" Value="{AppThemeBinding Light=#4E68FF, Dark=#87A3FF}"/>
-                      </VisualState.Setters>
-                    </VisualState>
-                  </VisualStateGroup>
-                </VisualStateManager.VisualStateGroups>
+                <!-- Bind selection to the profile model. A native WinUI selection
+                     VisualState may not fire until the first user click; data
+                     triggers render the border correctly on the initial load. -->
                 <Border x:Name="ProfileCardBorder" Grid.Column="0"
-                        Stroke="{AppThemeBinding Light=#DCE4F2, Dark=#3C4C60}" StrokeThickness="1.5"
+                        Stroke="{AppThemeBinding Light=#C6D1E2, Dark=#4C6080}" StrokeThickness="1.5"
                         StrokeShape="RoundRectangle 15" Padding="0" MinimumHeightRequest="78"
                         BackgroundColor="{AppThemeBinding Light=#FFFFFF, Dark=#172233}">
+                  <Border.Triggers>
+                    <DataTrigger TargetType="Border" Binding="{Binding IsSelected}" Value="True">
+                      <Setter Property="BackgroundColor" Value="{AppThemeBinding Light=#EDF3FF, Dark=#20324D}"/>
+                      <Setter Property="Stroke" Value="{AppThemeBinding Light=#4E68FF, Dark=#87A3FF}"/>
+                    </DataTrigger>
+                  </Border.Triggers>
                   <Grid ColumnDefinitions="4,*" ColumnSpacing="0">
                   <BoxView Grid.Column="0" IsVisible="{Binding IsConnected}" Color="{AppThemeBinding Light=#3152C6, Dark=#87A3FF}"/>
                   <Grid Grid.Column="1" ColumnDefinitions="*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="9"
@@ -156,7 +147,9 @@
                           <Label Text="✓" FontSize="10" TextColor="{AppThemeBinding Light=#3159D6, Dark=#9AB7FF}"
                                  HorizontalOptions="Center" VerticalOptions="Center"/>
                         </Border>
-                        <Label Text="{Binding [ServerRunningIndicatorShort], Source={x:Static loc:UiStrings.Instance}}"
+                        <Label BindingContext="{x:Static loc:UiStrings.Instance}"
+                               x:DataType="loc:UiStrings"
+                               Text="{Binding ServerRunningIndicatorShort}"
                                FontSize="11" TextColor="{AppThemeBinding Light=#3159D6, Dark=#9AB7FF}"
                                VerticalOptions="Center"/>
                       </HorizontalStackLayout>
@@ -387,7 +380,8 @@
   <VerticalStackLayout Spacing="14">
     <Label Text="{Binding [SectionLocalProxy], Source={x:Static loc:UiStrings.Instance}}"
            Style="{StaticResource SectionTitleStyle}"/>
-    <Grid ColumnDefinitions="*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="12">
+    <!-- Three editable proxy inbound ports share one row; the PAC script service is separate. -->
+    <Grid ColumnDefinitions="*,*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto" RowSpacing="12">
       <Border Grid.Row="0" Grid.Column="0" Style="{StaticResource InnerCardStyle}">
         <VerticalStackLayout Spacing="9">
           <Label Text="{Binding [ProxyInboundHttpTitle], Source={x:Static loc:UiStrings.Instance}}"
@@ -410,7 +404,17 @@
           </Grid>
         </VerticalStackLayout>
       </Border>
-      <Border Grid.Row="1" Grid.ColumnSpan="2" Style="{StaticResource InnerCardStyle}">
+      <Border Grid.Row="0" Grid.Column="2" Style="{StaticResource InnerCardStyle}">
+        <VerticalStackLayout Spacing="9">
+          <Label Text="{Binding [FieldPacProxyPort], Source={x:Static loc:UiStrings.Instance}}"
+                 FontAttributes="Bold" FontSize="14" LineBreakMode="WordWrap"/>
+          <Entry x:Name="PacProxyPortEntry" Keyboard="Numeric"
+                 Placeholder="{Binding [PlaceholderPacProxyPort], Source={x:Static loc:UiStrings.Instance}}"/>
+          <Label Text="{Binding [HelpPacProxyPort], Source={x:Static loc:UiStrings.Instance}}"
+                 Style="{StaticResource HintLabelStyle}" LineBreakMode="WordWrap"/>
+        </VerticalStackLayout>
+      </Border>
+      <Border Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3" Style="{StaticResource InnerCardStyle}">
         <Grid ColumnDefinitions="*,*" ColumnSpacing="14">
           <VerticalStackLayout Grid.Column="0" Spacing="5">
             <Label Text="{Binding [FieldPacPort], Source={x:Static loc:UiStrings.Instance}}" Style="{StaticResource FieldLabelStyle}"/>
@@ -488,6 +492,11 @@
         <Switch Grid.Column="0" x:Name="BalanceSwitch" Scale="0.84" HorizontalOptions="Start"/>
         <Label Grid.Column="1" Text="{Binding [ToggleBalanceServers], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/>
       </Grid>
+      <Grid ColumnDefinitions="48,Auto" Margin="0,0,18,9" ColumnSpacing="5">
+        <Switch Grid.Column="0" x:Name="FileLoggingSwitch" Scale="0.84" HorizontalOptions="Start"
+                Toggled="FileLoggingToggled" AutomationId="enable-file-logging"/>
+        <Label Grid.Column="1" Text="{Binding [ToggleEnableFileLogging], Source={x:Static loc:UiStrings.Instance}}" VerticalOptions="Center"/>
+      </Grid>
     </FlexLayout>
   </VerticalStackLayout>
 </Border>
@@ -515,7 +524,7 @@
 </Border>
 <HorizontalStackLayout Spacing="8">
   <Button Text="{Binding [ActionClearLogs], Source={x:Static loc:UiStrings.Instance}}" Clicked="ClearLogClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_delete_neutral.png" ContentLayout="Left,6"/>
-  <Button Text="{Binding [ActionExportLogs], Source={x:Static loc:UiStrings.Instance}}" Clicked="ExportLogClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_download_neutral.png" ContentLayout="Left,6"/>
+  <Button x:Name="ExportLogButton" Text="{Binding [ActionExportLogs], Source={x:Static loc:UiStrings.Instance}}" Clicked="ExportLogClicked" Style="{StaticResource SmallButtonStyle}" ImageSource="action_download_neutral.png" ContentLayout="Left,6"/>
 </HorizontalStackLayout>
 </VerticalStackLayout>
 

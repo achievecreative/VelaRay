@@ -36,6 +36,10 @@ public sealed class UiStrings : INotifyPropertyChanged
     public string Language => _language;
     public string this[string key] => (_language == "en-US" ? _en : _zh).TryGetValue(key, out var value) ? value : key;
 
+    // Explicitly typed binding for a localized label inside the ServerProfile DataTemplate.
+    // Avoid indexing a UiStrings resource with the template's ServerProfile x:DataType in MAUI 11 XamlC.
+    public string ServerRunningIndicatorShort => this["ServerRunningIndicatorShort"];
+
     // Runtime messages can use the original Simplified Chinese source as lookup key.
     public string Translate(string source) =>
         _language == "en-US" && _lookup.TryGetValue(source, out var value) ? value : source;

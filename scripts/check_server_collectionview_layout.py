@@ -21,10 +21,11 @@ assert len(card)==1
 card=card[0]
 assert card.get('Grid.Column')=='0' and card.get('MinimumHeightRequest')=='78' and card.get('Margin') is None
 assert card.get('{http://schemas.microsoft.com/winfx/2009/xaml}Name')=='ProfileCardBorder'
-for state in ('Normal','Selected'):
-    sets=wrap.xpath('./m:VisualStateManager.VisualStateGroups/m:VisualStateGroup/m:VisualState[@Name="%s"]/m:VisualState.Setters/m:Setter'%state,namespaces=n)
-    assert len(sets)==2 and all(s.get('TargetName')=='ProfileCardBorder' for s in sets)
-    assert {s.get('Property') for s in sets}=={'Border.BackgroundColor','Border.Stroke'}
+triggers=card.xpath('./m:Border.Triggers/m:DataTrigger[@Binding="{Binding IsSelected}"][@Value="True"]',namespaces=n)
+assert len(triggers)==1, 'Selected border must use model binding on first render'
+setters=triggers[0].xpath('./m:Setter',namespaces=n)
+assert {s.get('Property') for s in setters}=={'BackgroundColor','Stroke'}
+assert card.get('Stroke') and card.get('StrokeThickness')=='1.5', 'Unselected border visible before selection'
 for b in ('Name','ProtocolBadge','EndpointDisplay','LatencyDisplay','IsConnected'):
     assert '{Binding %s}'%b in etree.tostring(card,encoding='unicode')
 print('PASS: 2dp native vertical spacing; 10dp dedicated right rail; actual clearance varies with scrollbar width; 78dp card; selection and bindings preserved')

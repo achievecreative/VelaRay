@@ -12,19 +12,20 @@ public static class V5ConfigBuilder
     public static string Build(ClientSettings options, ServerProfile selected)
     {
         Validate(options, selected);
+        var routingMode = EffectiveRoutingMode.Resolve(options);
         var listen = options.AllowLan ? "0.0.0.0" : "127.0.0.1";
         var useBalance = options.BalanceAllNodes && options.Profiles.Count > 1;
         var outbounds = new JsonArray();
         var directOutbound = new JsonObject { ["tag"] = "direct", ["protocol"] = "freedom", ["settings"] = new JsonObject() };
         // Both V2Fly jsonv5 and V4 select the FIRST outbound if no routing rule matches.
-        if (options.RoutingMode == "Smart" && !SmartRoutingPolicy.ProxyUnmatched(options))
+        if (routingMode == "Smart" && !SmartRoutingPolicy.ProxyUnmatched(options))
             outbounds.Add(directOutbound);
         foreach (var (profile, tag) in OutboundPlanner.Get(options, selected))
         {
             OutboundPlanner.ValidateReferenced(options, profile, tag);
             outbounds.Add(BuildOutbound(profile, tag));
         }
-        if (options.RoutingMode != "Smart" || SmartRoutingPolicy.ProxyUnmatched(options))
+        if (routingMode != "Smart" || SmartRoutingPolicy.ProxyUnmatched(options))
             outbounds.Add(directOutbound);
         outbounds.Add(new JsonObject { ["tag"] = "block", ["protocol"] = "blackhole", ["settings"] = new JsonObject() });
         var config = new JsonObject
@@ -56,7 +57,15 @@ public static class V5ConfigBuilder
             // V5 DNS schema uses service.dns with nameServer entries (not V4 dns.servers).
             config["dns"] = new JsonObject { ["nameServer"] = new JsonArray(dns.Select(s => (JsonNode?)new JsonObject { ["address"] = new JsonObject { ["address"] = s } }).ToArray()) };
         }
-        config["router"] = BuildRouting(options, useBalance);
+        // PAC scripts use an independent HTTP inbound to preserve domain routing
+        // without changing the explicit HTTP/SOCKS5 behavior.
+        ((JsonArray)config["inbounds"]!).Add(new JsonObject
+        {
+            ["tag"] = ExplicitProxyPolicy.PacHttpTag, ["protocol"] = "http",
+            ["listen"] = "127.0.0.1", ["port"] = options.PacProxyPort,
+            ["settings"] = new JsonObject(), ["sniffing"] = BuildSniffing(options)
+        });
+        config["router"] = BuildRouting(options, useBalance, routingMode);
         return config.ToJsonString(Pretty);
     }
 
@@ -73,12 +82,12 @@ public static class V5ConfigBuilder
     {
         if (options.RoutingMode is not ("Smart" or "ProxyAll" or "Direct" or "BypassCN"))
             throw new ArgumentException("Only built-in routing modes may be previewed.", nameof(options));
-        return BuildRouting(options, balanced: false);
+        return BuildRouting(options, balanced: false, options.RoutingMode);
     }
 
-    private static JsonObject BuildRouting(ClientSettings options, bool balanced)
+    private static JsonObject BuildRouting(ClientSettings options, bool balanced, string routingMode)
     {
-        JsonObject router = options.RoutingMode switch
+        JsonObject router = routingMode switch
         {
             "Smart" => SmartRoutingPolicy.BuildV5(options),
             "ProxyAll" => new JsonObject { ["domainStrategy"] = "AsIs", ["rule"] = new JsonArray() },
@@ -119,7 +128,7 @@ public static class V5ConfigBuilder
                 ["outboundSelector"] = new JsonArray(options.Profiles.Select(p => (JsonNode?)JsonValue.Create("node-" + p.Id)).ToArray()),
                 ["strategy"] = "random"
             });
-            if (options.RoutingMode == "Smart")
+            if (routingMode == "Smart")
             {
                 // Balance only explicitly proxied PAC destinations to avoid a catch-all
                 // rule that can preempt IpIfNonMatch GeoIP lookups. Unmatched requests
@@ -134,6 +143,10 @@ public static class V5ConfigBuilder
             else
                 rules.Add(new JsonObject { ["networks"] = "tcp,udp", ["balancingTag"] = "balance" });
         }
+        // Highest priority: force only explicit application ingress to the remote
+        // outbound. Never match PAC-managed http-in while in PAC mode.
+        if (ExplicitProxyPolicy.NeedsForcedRule(routingMode))
+            rules.Insert(0, ExplicitProxyPolicy.V5Rule(balanced));
         return router;
     }
 
@@ -268,7 +281,7 @@ public static class V5ConfigBuilder
             "hysteria2" => BuildHy2Transport(p),
             "ws" => new JsonObject { ["path"] = p.WebSocketPath, ["headers"] = ParseObject(p.WebSocketHeadersJson, "WebSocket headers") },
             "grpc" => new JsonObject { ["serviceName"] = p.GrpcServiceName },
-            "tcp" => new JsonObject { ["header"] = ParseObject(p.TcpHeaderJson, "TCP header") },
+            "tcp" => BuildTcpTransportSettings(p),
             "mkcp" => new JsonObject
             {
                 ["mtu"] = p.KcpMtu, ["tti"] = p.KcpTti,
@@ -319,6 +332,18 @@ public static class V5ConfigBuilder
         return result;
     }
 
+    private static JsonObject BuildTcpTransportSettings(ServerProfile profile)
+    {
+        var header = ParseTcpHeader(profile.TcpHeaderJson);
+        // Native jsonv5 TCP requires no transport options for unmodified TCP.
+        // Do not emit a synthetic legacy V4 header for the default none mode.
+        // Preserve explicitly configured headers for installations using them.
+        if (header.Count == 0 || (header.Count == 1
+            && string.Equals((string?)header["type"], "none", StringComparison.OrdinalIgnoreCase)))
+            return new JsonObject();
+        return new JsonObject { ["header"] = header };
+    }
+
     public static JsonObject BuildHy2Transport(ServerProfile p)
     {
         var congestion = new JsonObject { ["type"] = p.Congestion.ToLowerInvariant() };
@@ -328,6 +353,35 @@ public static class V5ConfigBuilder
             congestion["down_mbps"] = p.DownloadMbps;
         }
         return new JsonObject { ["password"] = p.TransportPassword, ["congestion"] = congestion, ["use_udp_extension"] = p.Protocol == "hysteria2" && p.UseUdpExtension };
+    }
+
+    /// <summary>
+    /// Normalizes the optional TCP disguise header for both V4 and V5.
+    /// An empty editor, {}, and a plain {"type":"none"} all mean raw TCP.
+    /// Reject a non-empty object without `type` instead of generating a config
+    /// that only fails after invoking the core executable.
+    /// </summary>
+    public static JsonObject ParseTcpHeader(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new JsonObject();
+
+        var header = ParseObject(json, "TCP header");
+        if (header.Count == 0) return header;
+
+        string? type;
+        try { type = (string?)header["type"]; }
+        catch (InvalidOperationException)
+        {
+            throw new ArgumentException("TCP header 'type' must be a string, such as 'none' or 'http'.");
+        }
+
+        if (string.IsNullOrWhiteSpace(type))
+            throw new ArgumentException("TCP header JSON must include a non-empty 'type'; use {} or {\"type\":\"none\"} for plain TCP.");
+
+        if (string.Equals(type, "none", StringComparison.OrdinalIgnoreCase) && header.Count == 1)
+            return new JsonObject();
+
+        return header;
     }
 
     public static JsonObject ParseObject(string json, string label)
@@ -340,9 +394,10 @@ public static class V5ConfigBuilder
     {
         if (string.IsNullOrWhiteSpace(p.Address)) throw new ArgumentException("Server address is required.");
         if (p.Port is < 1 or > 65535) throw new ArgumentException("Server port must be 1-65535.");
-        if (new[] { o.SocksPort, o.HttpPort, o.PacPort }.Any(x => x is < 1 or > 65535) ||
-            o.SocksPort == o.HttpPort || o.SocksPort == o.PacPort || o.HttpPort == o.PacPort)
-            throw new ArgumentException("SOCKS, HTTP, PAC ports must be distinct values 1-65535.");
+        var localPorts = new[] { o.SocksPort, o.HttpPort, o.PacProxyPort, o.PacPort };
+        if (localPorts.Any(x => x is < 1 or > 65535) ||
+            localPorts.Distinct().Count() != localPorts.Length)
+            throw new ArgumentException("SOCKS5, explicit HTTP, PAC proxy, and PAC script ports must be distinct values 1-65535.");
         if (p.Protocol is not ("vmess" or "trojan" or "hysteria2")) throw new ArgumentException("Only VMess, Trojan, and Hysteria2 are supported.");
         if (p.Transport is not ("tcp" or "ws" or "http" or "httpupgrade" or "grpc" or "mkcp" or "quic" or "hysteria2")) throw new ArgumentException("Unsupported transport.");
         if (p.Protocol == "hysteria2" && p.Transport != "hysteria2") throw new ArgumentException("Native Hysteria2 requires Hysteria2 transport.");
@@ -369,10 +424,10 @@ public static class V5ConfigBuilder
 
         if (p.EnableMux && p.MuxConcurrency < 1) throw new ArgumentException("Mux concurrency must be positive.");
         if (p.Transport == "ws") ParseObject(p.WebSocketHeadersJson, "WebSocket headers");
-        if (p.Transport == "tcp") ParseObject(p.TcpHeaderJson, "TCP header");
+        if (p.Transport == "tcp") ParseTcpHeader(p.TcpHeaderJson);
         if (p.Transport == "mkcp" && (p.KcpMtu < 576 || p.KcpMtu > 1460 || p.KcpTti < 10 || p.KcpTti > 100))
             throw new ArgumentException("mKCP MTU must be 576-1460 and TTI 10-100.");
-        if (o.RoutingMode == "Custom" && !CustomRoutingDeployment.HasAppliedRule(o))
+        if (EffectiveRoutingMode.Resolve(o) == "Custom" && !CustomRoutingDeployment.HasAppliedRule(o))
             throw new ArgumentException("Select a custom routing rule set.");
     }
 }

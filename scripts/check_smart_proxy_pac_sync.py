@@ -32,7 +32,7 @@ checks = {
         'EffectiveManagedPacTemplate(ClientSettings settings) => settings.PacTemplate;' in policy,
     'Both generators change first outbound without wildcard network routing':
         'SmartRoutingPolicy.ProxyUnmatched(settings)' in v4 and 'SmartRoutingPolicy.ProxyUnmatched(options)' in v5 and
-        'if (options.RoutingMode == "Smart")' in v4 and 'if (options.RoutingMode == "Smart")' in v5,
+        'if (routingMode == "Smart")' in v4 and 'if (routingMode == "Smart")' in v5,
     'Domain-boundary PAC suffix match, case-insensitive':
         "host.substring(host.length - name.length - 1) === '.' + name" in pac and
         "(host || '').toLowerCase()" in pac,

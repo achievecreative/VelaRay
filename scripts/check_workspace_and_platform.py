@@ -30,7 +30,7 @@ check('02 global navigation remains above the server list',
       global_navigation.get('Grid.Row')=='1' and find('ProfilesList').get('Grid.Row')=='3')
 check('03 server settings button stays below server actions', find('NodeNavButton').get('Grid.Row')=='5' and find('DeleteProfileButton').get('Grid.Column')=='2')
 # 2: selection state is not connection state
-check('04 selection visually distinct from running green badge', xaml.find('.//m:VisualState[@Name="Selected"]',ns) is not None and find('ProfilesList').get('SelectionMode')=='Single' and 'IsConnected' in (APP/'MainPage.xaml').read_text())
+check('04 selection visually distinct from running green badge', xaml.find('.//m:DataTrigger[@Binding="{Binding IsSelected}"]',ns) is not None and find('ProfilesList').get('SelectionMode')=='Single' and 'IsConnected' in (APP/'MainPage.xaml').read_text())
 sel=code.split('private void ProfilesSelectionChanged',1)[1].split('private void RefreshProfiles',1)[0]
 check('05 selecting a node opens editor but never connects', 'ShowOnly(NodeSection)' in sel and all(op not in sel for op in ('ConnectAsync(', 'ToggleConnectionAsync(', 'DisconnectAsync(')))
 # 3: responsive action placement and top status

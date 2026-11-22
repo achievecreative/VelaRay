@@ -13,7 +13,7 @@ $output = Join-Path $root "publish/$Runtime-$Mode"
 if (Test-Path $output) { Remove-Item $output -Recurse -Force }
 $args = @(
     'publish', $project,
-    '-c', 'Release', '-f', 'net10.0-windows10.0.19041.0', '-r', $Runtime,
+    '-c', 'Release', '-f', 'net11.0-windows10.0.19041.0', '-r', $Runtime,
     "-p:RuntimeIdentifierOverride=$Runtime",
     '-p:WindowsPackageType=None',
     '-p:WindowsAppSDKSelfContained=true',
@@ -24,6 +24,7 @@ if ($Mode -eq 'SingleFile') {
     $args += @(
         '-p:PublishSingleFile=true',
         '-p:IncludeAllContentForSelfExtract=true',
+        '-p:EnableCompressionInSingleFile=true',
         '-p:EnableMsixTooling=true'
     )
 }

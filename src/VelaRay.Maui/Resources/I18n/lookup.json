@@ -83,7 +83,7 @@
   "全局：向 Windows 设置 HTTP/HTTPS + SOCKS5 代理；只有遵循系统代理的应用会经过代理（非 TUN）。": "Global: set Windows HTTP/HTTPS and SOCKS5 proxy. Only apps that honor the system proxy are affected (not TUN).",
   "关闭": "Close",
   "关闭窗口时最小化到托盘": "Minimize to tray on close",
-  "内核路由策略（独立于系统代理模式）": "Core routing policy (independent of system proxy)",
+  "内核路由策略（独立于系统代理模式）": "Core routing policy (PAC / Manual; Global forces ProxyAll)",
   "分享": "Share",
   "切换格式后，将重新生成配置并自动隐藏不兼容的参数。": "Switching formats regenerates the config and hides unsupported fields.",
   "删除": "Delete",
@@ -227,5 +227,10 @@
   "节点配置无效": "Invalid config",
   "节点内核不可用": "Core unavailable",
   "节点传输不支持": "Unsupported",
-  "节点测速失败": "Failed"
+  "节点测速失败": "Failed",
+  "全局：遵循 Windows 系统代理的请求均通过远程代理（内核固定 ProxyAll）；非 TUN。更改生效需要重连时会提示。": "Global: requests that honor the Windows system proxy use the remote proxy (core forced to ProxyAll). Not TUN. Reconnect if prompted.",
+  "GlobalExternalConfigNotSupported": "Global requires a VelaRay-generated core config so all traffic can use the remote proxy. Turn off external JSON or use PAC/Manual.",
+  "全局系统代理不支持外部自定义 JSON 配置，请切换到 VelaRay 自动生成的配置，或选择 PAC / Manual。": "Global cannot enforce ProxyAll with an external JSON configuration. Use generated config or PAC/Manual.",
+  "代理模式已应用，内核已自动重启": "Proxy mode applied; V2Ray core restarted automatically.",
+  "代理模式已保存，但另有待应用配置；请点击重新连接并应用。": "Proxy mode saved, but other settings are pending. Select Reconnect and apply."
 }

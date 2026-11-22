@@ -71,3 +71,8 @@ run_case("China-site template base list", "ChinaSitesDirect", ["baidu.com", "qq.
 
 run_case("PAC explicit proxy overrides China offline template", "ChinaSitesDirect", [], ["baidu.com"], 1088,
          [["baidu.com", "PROXY 127.0.0.1:1088"], ["qq.com", "DIRECT"], ["unknown.net", "PROXY 127.0.0.1:1088"]])
+
+run_case("independent PAC proxy port", "DirectByDefault", [], ["google.com"], 1089,
+         [["google.com", "PROXY 127.0.0.1:1089"],
+          ["www.google.com", "PROXY 127.0.0.1:1089"],
+          ["notgoogle.com", "DIRECT"]])

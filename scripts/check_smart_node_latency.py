@@ -34,10 +34,10 @@ assert 'ProbeMethodDisplay' in model and 'MeasuredLatencyMs' in model and '[Json
 assert 'JsonSerializer.Deserialize<ServerProfile>(JsonSerializer.Serialize(profile))' in main
 assert '{Binding ProbeMethodDisplay}' in xaml and '{Binding LatencyDisplay}' in xaml
 # All non-success probe outcomes use the localized Timeout label; only this state is red.
-assert 'profile.ProbeStatusText = succeeded ? "" : L("节点测速超时");' in main
+assert 'profile.ProbeStatusText = succeeded ? "" : UiStrings.Instance["节点测速超时"];' in main
 assert 'profile.IsProbeFailure = !succeeded;' in main
 assert 'profile.IsProbeFailure = false;' in main
-assert 'profile.ProbeStatusText = L("节点测速超时");' in main
+assert 'profile.ProbeStatusText = UiStrings.Instance["节点测速超时"];' in main
 assert 'p.IsProbeFailure = false;' in main
 assert 'public bool IsProbeFailure' in model and 'nameof(IsProbeFailure)' in model
 assert 'Binding IsProbeFailure' in xaml and 'DataTrigger TargetType="Label"' in xaml

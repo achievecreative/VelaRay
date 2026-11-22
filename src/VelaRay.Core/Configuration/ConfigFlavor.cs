@@ -46,6 +46,22 @@ public static class ConfigFlavor
 
 public static class ProfileCapabilities
 {
+    /// <summary>
+    /// A new profile starts as native Hysteria2 with TLS enabled. When the
+    /// user changes that profile to VMess/Trojan, do not silently carry the
+    /// Hysteria2 transport and mandatory TLS into an ordinary TCP node.
+    /// Existing non-Hysteria2 profiles retain their explicitly chosen settings.
+    /// </summary>
+    public static (string Transport, bool TlsEnabled) ProtocolSwitchDefaults(
+        string previousProtocol, string nextProtocol, string previousTransport, bool tlsEnabled)
+    {
+        if (nextProtocol == "hysteria2") return ("hysteria2", true);
+        if (previousProtocol == "hysteria2" && previousTransport == "hysteria2"
+            && (nextProtocol is "vmess" or "trojan"))
+            return ("tcp", false);
+        return (previousTransport, tlsEnabled);
+    }
+
     public static IReadOnlyList<string> Transports(string format, string protocol)
     {
         if (protocol == "hysteria2") return ["hysteria2"];

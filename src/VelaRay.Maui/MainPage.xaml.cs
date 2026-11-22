@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Net.NetworkInformation;
 using System.Text.Json;
 using VelaRay.Core.Configuration;
 using VelaRay.Core.Models;
@@ -47,6 +48,9 @@ public partial class MainPage : ContentPage
     // Snapshot of the exact V4/V5 JSON loaded at connection time, not the editor's
     // selected server. This is what distinguishes PAC-only hot changes from core changes.
     private string? _runningConfigSnapshot;
+    // Original settings at core launch. Global's ProxyAll JSON hides routing drafts;
+    // this snapshot prevents a mode switch from silently applying those drafts.
+    private ClientSettings? _runningSettingsAtLaunch;
     private string? _runningConfigProfileId;
     private string? _runningExternalFilePath;
     private bool _hasPendingCoreChanges;
@@ -72,7 +76,20 @@ public partial class MainPage : ContentPage
     private int _runningHttpPort;
     private int _runningSocksPort;
     private int _runningPacPort;
+    private int _runningPacProxyPort;
     private bool _systemProxyApplied;
+    private long _connectionRevision;
+    private CancellationTokenSource? _resumeRecoveryCancellation;
+    private ResumeContext? _suspendedConnection;
+
+    // Snapshot the ACTUALLY running process, not unsaved node/PAC/routing edits.
+    // The suspended connection can be recovered even if v2ray exits before Windows finishes waking.
+    private sealed record ResumeContext(
+        long Revision, string Executable, string ConfigPath, string Format,
+        string ProxyMode, int HttpPort, int SocksPort, int PacPort, int PacProxyPort, int StatsPort,
+        string PacFilePath, string? ConfigSnapshot, string? ProfileId,
+        string? ExternalFilePath, bool ExternalConfig,
+        string[] ActiveProfileIds, string[] ActiveProfileNames);
     private sealed record PacTemplateChoice(string Key, string Label);
     private sealed record LocalizedChoice(string Value, string Label);
     private static readonly (string Value, string Label)[] ProxyModes =
@@ -102,7 +119,7 @@ public partial class MainPage : ContentPage
         _proxy = proxy; _startup = startup; _tray = tray; _pac = pac; _shell = shell; _locator = locator;
         _fileLocations = fileLocations;
         _latencyProbe = new SmartNodeLatencyProbe(processLifetime);
-        _runtimeLogs = new RuntimeLogStore(_store.LogFilePath);
+        _runtimeLogs = new RuntimeLogStore(_store.LogFilePath, enableFileLogging: false);
         if (Application.Current is not null)
             Application.Current.RequestedThemeChanged += (_, _) =>
                 MainThread.BeginInvokeOnMainThread(() =>
@@ -145,6 +162,7 @@ public partial class MainPage : ContentPage
             _runningHttpPort = 0;
             _runningSocksPort = 0;
             _runningPacPort = 0;
+            _runningPacProxyPort = 0;
         });
     }
 
@@ -157,6 +175,7 @@ public partial class MainPage : ContentPage
         try
         {
             _settings = await _store.LoadAsync();
+            _runtimeLogs.SetFileLoggingEnabled(_settings.EnableFileLogging);
             UiStrings.Instance.ChangeLanguage(_settings.Language);
             UpdateLanguageButtons();
             _shell.MinimizeToTray = _settings.MinimizeToTray;
@@ -219,6 +238,7 @@ public partial class MainPage : ContentPage
             StopTrafficMonitoring();
             _runningProxyMode = "";
             _runningConfigSnapshot = null;
+            _runningSettingsAtLaunch = null;
             _runningConfigProfileId = null;
             _runningExternalFilePath = null;
             _hasPendingCoreChanges = false;
@@ -387,7 +407,7 @@ public partial class MainPage : ContentPage
                         };
                         profile.MeasuredLatencyMs = null;
                         profile.IsProbeFailure = false;
-                        profile.ProbeStatusText = L("节点测速中");
+                        profile.ProbeStatusText = UiStrings.Instance["节点测速中"];
                     });
                     NodeProbeResult result;
                     try { result = await _latencyProbe.ProbeAsync(snapshot, executable); }
@@ -405,7 +425,7 @@ public partial class MainPage : ContentPage
                         // Keep the probe outcome itself intact for diagnostics.
                         var succeeded = result.Outcome == NodeProbeOutcome.Success && result.Milliseconds.HasValue;
                         profile.MeasuredLatencyMs = succeeded ? result.Milliseconds : null;
-                        profile.ProbeStatusText = succeeded ? "" : L("节点测速超时");
+                        profile.ProbeStatusText = succeeded ? "" : UiStrings.Instance["节点测速超时"];
                         profile.IsProbeFailure = !succeeded;
                     });
                 }
@@ -452,7 +472,7 @@ public partial class MainPage : ContentPage
         UpdateTrafficLabels();
         // Keep failure labels localized when the user changes language after a probe.
         foreach (var profile in _profiles.Where(profile => profile.IsProbeFailure))
-            profile.ProbeStatusText = L("节点测速超时");
+            profile.ProbeStatusText = UiStrings.Instance["节点测速超时"];
     }
 
     private string SelectedConfigVersion => ConfigFlavor.Normalize(_selected?.ConfigVersion);
@@ -519,7 +539,7 @@ public partial class MainPage : ContentPage
     private async void PendingReconnectClicked(object sender, EventArgs e)
     {
         if (!_hasPendingCoreChanges || _connectionActionBusy || _installingCoreUpdate) return;
-        // Only the explicit button authorizes a core restart. No save/change event calls this.
+        // This button applies pending routing edits. Saving a pure proxy-mode change may also safely restart the core.
         await ToggleConnectionAsync(forceRestart: true);
     }
 
@@ -616,6 +636,7 @@ public partial class MainPage : ContentPage
         _loading = true;
         SocksPortEntry.Text = _settings.SocksPort.ToString();
         HttpPortEntry.Text = _settings.HttpPort.ToString();
+        PacProxyPortEntry.Text = _settings.PacProxyPort.ToString();
         PacPortEntry.Text = _settings.PacPort.ToString();
         ProxyModePicker.SelectedItem = (ProxyModePicker.ItemsSource as LocalizedChoice[])?.FirstOrDefault(x => x.Value == _settings.ProxyMode);
         GeoIpFilePicker.SelectedItem = (GeoIpFilePicker.ItemsSource as LocalizedChoice[])?.FirstOrDefault(x => x.Value == GeoDataAssets.NormalizeGeoIpFile(_settings.GeoIpFile));
@@ -624,6 +645,8 @@ public partial class MainPage : ContentPage
             x.Value == _settings.SmartUnmatchedRoute) ?? (SmartFallbackPicker.ItemsSource as LocalizedChoice[])?.FirstOrDefault();
         SmartFallbackPicker.SelectedItem = selectedFallback;
         LogLevelPicker.SelectedItem = _settings.LogLevel;
+        FileLoggingSwitch.IsToggled = _settings.EnableFileLogging;
+        ExportLogButton.IsEnabled = _settings.EnableFileLogging;
         DnsEntry.Text = _settings.DnsServers;
         CorePathEntry.Text = _settings.CorePathOverride;
         LanSwitch.IsToggled = _settings.AllowLan;
@@ -651,6 +674,7 @@ public partial class MainPage : ContentPage
     {
         _loading = true;
         _selected = p;
+        UpdateSelectedProfileVisuals(p);
         ConfigVersionPicker.SelectedItem = ConfigFlavor.Normalize(p.ConfigVersion);
         NameEntry.Text = p.Name; ProtocolPicker.SelectedItem = p.Protocol;
         AddressEntry.Text = p.Address; PortEntry.Text = p.Port.ToString();
@@ -795,15 +819,15 @@ public partial class MainPage : ContentPage
 
     // The three radio cards are a visual adapter only: the original picker
     // remains the one source of truth for CaptureOptions and runtime behavior.
-    private void ProxyModeCardCheckedChanged(object sender, CheckedChangedEventArgs args)
+    private void ProxyModeCardCheckedChanged(object? sender, CheckedChangedEventArgs args)
     {
         if (!args.Value || _loading || _syncingProxyModeCards || sender is not RadioButton radio) return;
         if (radio.Value?.ToString() is { } mode) SelectProxyModeCard(mode);
     }
 
-    private void PacProxyModeCardTapped(object sender, TappedEventArgs e) => SelectProxyModeCard("PAC");
-    private void GlobalProxyModeCardTapped(object sender, TappedEventArgs e) => SelectProxyModeCard("Global");
-    private void ManualProxyModeCardTapped(object sender, TappedEventArgs e) => SelectProxyModeCard("Manual");
+    private void PacProxyModeCardTapped(object? sender, TappedEventArgs e) => SelectProxyModeCard("PAC");
+    private void GlobalProxyModeCardTapped(object? sender, TappedEventArgs e) => SelectProxyModeCard("Global");
+    private void ManualProxyModeCardTapped(object? sender, TappedEventArgs e) => SelectProxyModeCard("Manual");
 
     private void SelectProxyModeCard(string mode)
     {
@@ -848,7 +872,8 @@ public partial class MainPage : ContentPage
     {
         ConfiguredPortsFooterLabel.Text = string.Format(
             UiStrings.Instance["FooterConfiguredPorts"],
-            _settings.SocksPort, _settings.HttpPort, _settings.PacPort);
+            _settings.SocksPort, _settings.HttpPort,
+            _settings.PacProxyPort, _settings.PacPort);
         RunningModeFooterLabel.Text = _core.IsRunning
             ? string.Format(UiStrings.Instance["FooterRuntimeMode"],
                 string.IsNullOrWhiteSpace(_runningProxyMode) ? "—" : _runningProxyMode)
@@ -864,7 +889,7 @@ public partial class MainPage : ContentPage
     {
         ProxyModeDescriptionLabel.Text = L(CurrentProxyMode switch
         {
-            "Global" => "全局：向 Windows 设置 HTTP/HTTPS + SOCKS5 代理；只有遵循系统代理的应用会经过代理（非 TUN）。",
+            "Global" => "全局：遵循 Windows 系统代理的请求均通过远程代理（内核固定 ProxyAll）；非 TUN。保存设置时自动应用模式变更。",
             "PAC" => "PAC：将 Windows 自动配置 URL 指向本地 PAC 服务；命中 PAC 直连的请求不会进入 V2Ray。",
             _ => "手动：只启动本地 SOCKS5 和 HTTP 代理，不修改任何 Windows 系统代理设置。"
         });
@@ -1096,7 +1121,31 @@ public partial class MainPage : ContentPage
         RefreshBuiltInRouteJsonPreview();
     }
     private void SecurityOptionsChanged(object sender, EventArgs e) => UpdateConditionalFields();
-    private void ProtocolChanged(object sender, EventArgs e) => UpdateConditionalFields();
+    private void ProtocolChanged(object sender, EventArgs e)
+    {
+        if (!_loading && !_updatingCapabilities && _selected is { } current)
+        {
+            var nextProtocol = ProtocolPicker.SelectedItem as string ?? current.Protocol;
+            var previousTransport = TransportPicker.SelectedItem as string ?? current.Transport;
+            var (transport, tlsEnabled) = ProfileCapabilities.ProtocolSwitchDefaults(
+                current.Protocol, nextProtocol, previousTransport, TlsSwitch.IsToggled);
+            if (transport != previousTransport || tlsEnabled != TlsSwitch.IsToggled)
+            {
+                // Prevent transient Picker events from clearing the selection
+                // while its available transport list is being replaced.
+                _updatingCapabilities = true;
+                try
+                {
+                    var format = ConfigVersionPicker.SelectedItem as string ?? current.ConfigVersion;
+                    TransportPicker.ItemsSource = ProfileCapabilities.Transports(format, nextProtocol).ToArray();
+                    TransportPicker.SelectedItem = transport;
+                    TlsSwitch.IsToggled = tlsEnabled;
+                }
+                finally { _updatingCapabilities = false; }
+            }
+        }
+        UpdateConditionalFields();
+    }
     private void TransportChanged(object sender, EventArgs e) => UpdateConditionalFields();
 
     private void ProfilesSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -1114,11 +1163,21 @@ public partial class MainPage : ContentPage
             }
         }
         _settings.SelectedProfileId = p.Id;
+        UpdateSelectedProfileVisuals(p);
         // Selection intentionally does not start, stop, or switch the current connection.
         ShowProfile(p);
         // Selecting a server opens its editor; it never starts or switches the proxy.
         ShowOnly(NodeSection);
         UpdateConnectionBanner(_core.IsRunning);
+    }
+
+    // Keeps the selected card outlined even before WinUI has raised its first
+    // CollectionView selection visual-state transition. Does not affect runtime
+    // connection indicators, which are bound independently to IsConnected.
+    private void UpdateSelectedProfileVisuals(ServerProfile? selected)
+    {
+        foreach (var profile in _profiles)
+            profile.IsSelected = ReferenceEquals(profile, selected);
     }
 
     private void RefreshProfiles()
@@ -1127,7 +1186,10 @@ public partial class MainPage : ContentPage
         _profiles.Clear();
         foreach (var profile in _settings.Profiles) _profiles.Add(profile);
         SynchronizeRunningIndicators();
-        ProfilesList.SelectedItem = _profiles.FirstOrDefault(x => x.Id == selectedId) ?? _profiles.FirstOrDefault();
+        var selected = _profiles.FirstOrDefault(x => x.Id == selectedId) ?? _profiles.FirstOrDefault();
+        _settings.SelectedProfileId = selected?.Id;
+        UpdateSelectedProfileVisuals(selected);
+        ProfilesList.SelectedItem = selected;
     }
     private void RefreshProfileDisplay()
     {
@@ -1213,7 +1275,7 @@ public partial class MainPage : ContentPage
         p.GrpcServiceName = GrpcEntry.Text?.Trim() ?? "";
         p.Http2Path = Http2PathEntry.Text?.Trim() ?? "/";
         p.Http2Hosts = Http2HostsEntry.Text?.Trim() ?? "";
-        p.TcpHeaderJson = TcpHeaderEntry.Text?.Trim() ?? "{\"type\":\"none\"}";
+        p.TcpHeaderJson = string.IsNullOrWhiteSpace(TcpHeaderEntry.Text) ? "{\"type\":\"none\"}" : TcpHeaderEntry.Text.Trim();
         p.TcpFastOpen = TcpFastOpenSwitch.IsToggled;
         p.EnableMux = MuxSwitch.IsToggled;
         p.MuxConcurrency = Int(MuxEntry.Text, "Mux", 8);
@@ -1242,12 +1304,20 @@ public partial class MainPage : ContentPage
     {
         _settings.SocksPort = Port(SocksPortEntry.Text, "SOCKS5");
         _settings.HttpPort = Port(HttpPortEntry.Text, "HTTP");
+        _settings.PacProxyPort = Port(PacProxyPortEntry.Text, "PAC proxy HTTP");
         _settings.PacPort = Port(PacPortEntry.Text, "PAC");
         _settings.ProxyMode = CurrentProxyMode;
+        // The PAC script server is separate from the PAC HTTP proxy ingress.
+        // All local listeners must have distinct ports before persisting changes.
+        var ports = new[] { _settings.SocksPort, _settings.HttpPort,
+            _settings.PacProxyPort, _settings.PacPort };
+        if (ports.Distinct().Count() != ports.Length)
+            throw new ArgumentException("SOCKS5、HTTP、PAC 代理和 PAC 脚本服务端口不能重复。");
         _settings.GeoIpFile = GeoDataAssets.NormalizeGeoIpFile((GeoIpFilePicker.SelectedItem as LocalizedChoice)?.Value);
         _settings.RoutingMode = CurrentRouteMode;
         _settings.SmartUnmatchedRoute = CurrentSmartUnmatchedRoute;
         _settings.LogLevel = LogLevelPicker.SelectedItem as string ?? "Warning";
+        _settings.EnableFileLogging = FileLoggingSwitch.IsToggled;
         _settings.DnsServers = DnsEntry.Text?.Trim() ?? "";
         _settings.CorePathOverride = CorePathEntry.Text?.Trim();
         _settings.AllowLan = LanSwitch.IsToggled;
@@ -1273,6 +1343,10 @@ public partial class MainPage : ContentPage
     {
         CaptureProfile();
         CaptureOptions();
+        // External JSON may route to Direct. Do not claim Global is proxy-only
+        // when VelaRay cannot control the configuration's routing table.
+        if (_settings.ProxyMode == "Global" && _settings.UseCustomConfig)
+            throw new InvalidOperationException(L("全局系统代理不支持外部自定义 JSON 配置，请切换到 VelaRay 自动生成的配置，或选择 PAC / Manual。"));
         if (_settings.StartWithWindows != _startup.IsEnabled()) _startup.SetEnabled(_settings.StartWithWindows);
         await _store.SaveAsync(_settings);
         RefreshProfileDisplay();
@@ -1315,9 +1389,44 @@ public partial class MainPage : ContentPage
             await SaveAllAsync();
             // Only the proxy-settings Save action may apply a system proxy mode.
             // Editing a node or clicking a mode card never touches the live connection.
-            var updatedLiveMode = !ReferenceEquals(sender, SaveProfileButton)
-                && await ApplySavedProxyModeWithoutCoreRestartAsync();
-            AppendLog(updatedLiveMode ? L("系统代理模式已应用，无需重新连接") : L("设置已保存"));
+            var savedProxyMode = !ReferenceEquals(sender, SaveProfileButton);
+            var updatedLiveMode = savedProxyMode && await ApplySavedProxyModeWithoutCoreRestartAsync();
+            var restartedForMode = false;
+            if (savedProxyMode && !updatedLiveMode && _core.IsRunning &&
+                _runningConfigSnapshot is not null && _runningSettingsAtLaunch is not null &&
+                _settings.ProxyMode != _runningProxyMode &&
+                RunningConfigChangeDetector.IsModeOnlyChange(
+                    _settings, _runningSettingsAtLaunch, _runningConfigSnapshot, _runningConfigProfileId,
+                    _runningExternalConfig, _runningProxyMode, _runningPacPort))
+            {
+                // Explicit Save authorizes a mode-only core restart. Continue to use
+                // the actual running node, even if another card is selected for editing.
+                var launchedId = _runningConfigProfileId;
+                var launchedExecutable = _core.RunningExecutablePath;
+                _connectionActionBusy = true;
+                RefreshConnectionActionButtons();
+                try
+                {
+                    await ConnectAsync(launchedId, modeOnlyRestart: true,
+                        launchedExecutable: launchedExecutable);
+                    restartedForMode = true;
+                }
+                finally
+                {
+                    _connectionActionBusy = false;
+                    RefreshConnectionActionButtons();
+                }
+            }
+            if (savedProxyMode && _core.IsRunning && !updatedLiveMode && !restartedForMode &&
+                _settings.ProxyMode != _runningProxyMode)
+            {
+                AppendLog(L("代理模式已保存，但另有待应用配置；请点击重新连接并应用。"));
+            }
+            else
+            {
+                AppendLog(restartedForMode ? L("代理模式已应用，内核已自动重启") :
+                    updatedLiveMode ? L("系统代理模式已应用，无需重新连接") : L("设置已保存"));
+            }
         }
         catch (Exception ex) { await AlertAsync("保存失败", ex); }
     }
@@ -1347,7 +1456,7 @@ public partial class MainPage : ContentPage
                     case "PAC":
                         if (_settings.SelectedPacFile.Equals("managed.pac", StringComparison.OrdinalIgnoreCase))
                             await WriteManagedPacAsync();
-                        _pac.Start(_settings.PacPort, _runningHttpPort, SelectedPacPath);
+                        _pac.Start(_settings.PacPort, _runningPacProxyPort, SelectedPacPath);
                         _systemProxyApplied = true; // A partial WinINET write must be recoverable.
                         _proxy.EnablePac(_settings.PacPort);
                         _runningPacPort = _settings.PacPort;
@@ -1394,7 +1503,11 @@ public partial class MainPage : ContentPage
                 }
                 throw;
             }
+            Interlocked.Increment(ref _connectionRevision);
+            _resumeRecoveryCancellation?.Cancel();
+            _suspendedConnection = null;
             _runningProxyMode = _settings.ProxyMode;
+            _runningSettingsAtLaunch = JsonSerializer.Deserialize<ClientSettings>(JsonSerializer.Serialize(_settings));
             UpdatePendingCoreChanges();
             UpdateFooterStatus();
             return true;
@@ -1448,8 +1561,17 @@ public partial class MainPage : ContentPage
         RefreshConnectionActionButtons();
         try
         {
-            await RunSafelyAsync(action == ConnectionAction.Disconnect ? DisconnectAsync : ConnectAsync,
-                action == ConnectionAction.Disconnect ? "断开失败" : "无法切换连接");
+            // Keep each delegate explicitly parameterless. ConnectAsync has optional
+            // parameters, so its method group cannot be passed as Func<Task>.
+            // Avoid conditional method-group expressions under MAUI 11/XAML SourceGen.
+            if (action == ConnectionAction.Disconnect)
+            {
+                await RunSafelyAsync(() => DisconnectAsync(), "断开失败");
+            }
+            else
+            {
+                await RunSafelyAsync(() => ConnectAsync(), "无法切换连接");
+            }
         }
         finally
         {
@@ -1468,107 +1590,157 @@ public partial class MainPage : ContentPage
         }, "无法切换连接");
     }
 
-    private async Task ConnectAsync()
+    private async Task ConnectAsync(string? launchedProfileId = null, bool modeOnlyRestart = false,
+        string? launchedExecutable = null)
     {
+        // Any explicit connection operation invalidates a pending sleep-recovery request.
+        Interlocked.Increment(ref _connectionRevision);
+        _resumeRecoveryCancellation?.Cancel();
+        _suspendedConnection = null;
         await _connectionGate.WaitAsync();
+        var oldCoreWasStopped = false;
         try
         {
             _expectedShutdown = true;
-            if (_core.IsRunning) await StopCoreAndProxyAsync();
-            var configPath = await SaveAndGenerateAsync();
-            // Snapshot the launch profile(s) before any asynchronous core startup.
-            // Selecting a different node during startup must not move the green marker.
-            bool launchedExternal = _settings.UseCustomConfig;
-            IReadOnlyList<ServerProfile> launchedProfiles = launchedExternal || _selected is null
-                ? []
-                : ActiveProfileResolver.Resolve(_settings, _selected);
-            // Freeze what V2Fly actually loads. Previews and external-file edits cannot
-            // mutate this snapshot while the core is running.
-            var activePath = await _store.CreateActiveConfigSnapshotAsync(configPath, SelectedConfigVersion);
-            // The selected config may contain custom geosite/geoip references, not
-            // only the default BypassCN routing presets.
-            // Keep the baseline JSON for pending-change comparison. The temporary
-            // active file may gain an optional local-only statistics endpoint.
-            // External JSON is never altered, even in the active snapshot.
-            var configJson = await File.ReadAllTextAsync(activePath);
-            var trafficPort = 0;
-            if (!launchedExternal)
+            // During a mode-only restart, never read the selected editor card.
+            // Saving the mode has already persisted the intended proxy choice.
+            var launchingProfile = modeOnlyRestart
+                ? _settings.Profiles.FirstOrDefault(p => p.Id == launchedProfileId)
+                    ?? throw new InvalidOperationException("The previously running server is no longer available.")
+                : _selected;
+            var launchingFormat = modeOnlyRestart
+                ? ConfigFlavor.Normalize(launchingProfile?.ConfigVersion)
+                : SelectedConfigVersion;
+            var executable = modeOnlyRestart ? launchedExecutable ?? CoreExecutable : CoreExecutable;
+            string? stagedConfigPath = null;
+            try
             {
-                try
+                if (modeOnlyRestart)
                 {
-                    var candidate = CoreTrafficStatistics.FindLoopbackPort(
-                        _settings.HttpPort, _settings.SocksPort, _settings.PacPort);
-                    var statsJson = CoreTrafficStatistics.Enable(configJson, SelectedConfigVersion, candidate);
-                    await File.WriteAllTextAsync(activePath, statsJson);
+                    // Validate the replacement BEFORE taking down the working core.
+                    // A unique staging file prevents overwriting the running snapshot.
+                    var generated = ConfigFlavor.Build(_settings, launchingProfile!);
+                    stagedConfigPath = Path.Combine(_store.ConfigDirectory,
+                        $"mode-switch-{Guid.NewGuid():N}.json");
+                    await File.WriteAllTextAsync(stagedConfigPath, generated);
+                    await _core.TestConfigAsync(executable, stagedConfigPath, launchingFormat);
+                }
+                if (_core.IsRunning)
+                {
+                    oldCoreWasStopped = true;
+                    await StopCoreAndProxyAsync();
+                }
+                var configPath = stagedConfigPath ?? await SaveAndGenerateAsync();
+                // Snapshot the actual running node(s), never the editor selection.
+                bool launchedExternal = _settings.UseCustomConfig;
+                IReadOnlyList<ServerProfile> launchedProfiles = launchedExternal || launchingProfile is null
+                    ? [] : ActiveProfileResolver.Resolve(_settings, launchingProfile);
+                // Freeze what V2Fly actually loads.
+                var activePath = await _store.CreateActiveConfigSnapshotAsync(configPath, launchingFormat);
+                // The selected config may contain custom geosite/geoip references, not
+                // only the default BypassCN routing presets.
+                // Keep the baseline JSON for pending-change comparison. The temporary
+                // active file may gain an optional local-only statistics endpoint.
+                // External JSON is never altered, even in the active snapshot.
+                var configJson = await File.ReadAllTextAsync(activePath);
+                var trafficPort = 0;
+                if (!launchedExternal)
+                {
                     try
                     {
-                        await _core.TestConfigAsync(CoreExecutable, activePath, SelectedConfigVersion);
-                        trafficPort = candidate;
+                        var candidate = CoreTrafficStatistics.FindLoopbackPort(
+                            _settings.HttpPort, _settings.SocksPort, _settings.PacPort,
+                            _settings.PacProxyPort);
+                        var statsJson = CoreTrafficStatistics.Enable(configJson, launchingFormat, candidate);
+                        await File.WriteAllTextAsync(activePath, statsJson);
+                        try
+                        {
+                            await _core.TestConfigAsync(executable, activePath, launchingFormat);
+                            trafficPort = candidate;
+                        }
+                        catch (Exception ex)
+                        {
+                            // Optional diagnostics must NEVER prevent the proxy from starting.
+                            AppendLog("Traffic statistics disabled for this core: " + ex.Message);
+                            await File.WriteAllTextAsync(activePath, configJson);
+                        }
                     }
                     catch (Exception ex)
                     {
-                        // Optional diagnostics must NEVER prevent the proxy from starting.
-                        AppendLog("Traffic statistics disabled for this core: " + ex.Message);
+                        AppendLog("Traffic statistics setup unavailable: " + ex.Message);
                         await File.WriteAllTextAsync(activePath, configJson);
                     }
                 }
-                catch (Exception ex)
+                var missing = GeoDataAssets.MissingForConfig(configJson, executable);
+                if (missing.Count > 0)
+                    throw new FileNotFoundException("缺少 V2Fly Geo 数据文件：" + string.Join(", ", missing)
+                        + "。请更新或安装对应的 v2ray-core 数据文件。");
+                // Refresh managed rules before the PAC server and WinINET PAC URL become active.
+                if (_settings.ProxyMode == "PAC" && _settings.SelectedPacFile.Equals("managed.pac", StringComparison.OrdinalIgnoreCase))
+                    await WriteManagedPacAsync();
+
+                await _core.StartAsync(executable, activePath, launchingFormat);
+                // Never activate Windows system proxy until the HTTP listener is accepting
+                // connections. If the core fails, restore the previous proxy instead.
+                // In Manual mode never touch Windows proxy settings, but both local
+                // listeners should still be ready for apps explicitly configured by the user.
+                await WaitForLocalHttpAsync(_settings.HttpPort);
+                await WaitForLocalHttpAsync(_settings.SocksPort);
+                if (!_settings.UseCustomConfig)
+                    await WaitForLocalHttpAsync(_settings.PacProxyPort);
+                _runningHttpPort = _settings.HttpPort;
+                _runningSocksPort = _settings.SocksPort;
+                _runningPacPort = _settings.PacPort;
+                _runningPacProxyPort = _settings.PacProxyPort;
+                if (_settings.ProxyMode == "PAC")
                 {
-                    AppendLog("Traffic statistics setup unavailable: " + ex.Message);
-                    await File.WriteAllTextAsync(activePath, configJson);
+                    _pac.Start(_settings.PacPort, _settings.PacProxyPort, SelectedPacPath);
+                    _systemProxyApplied = true; // Set first so a partial WinINET write can be rolled back.
+                    _proxy.EnablePac(_settings.PacPort);
                 }
-            }
-            var missing = GeoDataAssets.MissingForConfig(configJson, CoreExecutable);
-            if (missing.Count > 0)
-                throw new FileNotFoundException("缺少 V2Fly Geo 数据文件：" + string.Join(", ", missing)
-                    + "。请更新或安装对应的 v2ray-core 数据文件。");
-            // Refresh managed rules before the PAC server and WinINET PAC URL become active.
-            if (_settings.ProxyMode == "PAC" && _settings.SelectedPacFile.Equals("managed.pac", StringComparison.OrdinalIgnoreCase))
-                await WriteManagedPacAsync();
+                else if (_settings.ProxyMode == "Global")
+                {
+                    _systemProxyApplied = true; // Set first so a partial WinINET write can be rolled back.
+                    _proxy.EnableGlobal(_settings.HttpPort, _settings.SocksPort);
+                }
+                // Manual: no registry writes and no PAC URL are applied.
+                _runningProxyMode = _settings.ProxyMode;
+                _runningConfigSnapshot = configJson;
+                _runningSettingsAtLaunch = JsonSerializer.Deserialize<ClientSettings>(JsonSerializer.Serialize(_settings));
+                _runningConfigProfileId = launchingProfile?.Id;
+                _runningExternalFilePath = _settings.CustomConfigPath;
+                SetRunningConnection(true, launchedProfiles, launchedExternal);
+                StartTrafficMonitoring(trafficPort);
 
-            await _core.StartAsync(CoreExecutable, activePath, SelectedConfigVersion);
-            // Never activate Windows system proxy until the HTTP listener is accepting
-            // connections. If the core fails, restore the previous proxy instead.
-            // In Manual mode never touch Windows proxy settings, but both local
-            // listeners should still be ready for apps explicitly configured by the user.
-            await WaitForLocalHttpAsync(_settings.HttpPort);
-            await WaitForLocalHttpAsync(_settings.SocksPort);
-            _runningHttpPort = _settings.HttpPort;
-            _runningSocksPort = _settings.SocksPort;
-            _runningPacPort = _settings.PacPort;
-            if (_settings.ProxyMode == "PAC")
-            {
-                _pac.Start(_settings.PacPort, _settings.HttpPort, SelectedPacPath);
-                _systemProxyApplied = true; // Set first so a partial WinINET write can be rolled back.
-                _proxy.EnablePac(_settings.PacPort);
+                if (_settings.ProxyMode == "PAC" &&
+                    _settings.SelectedPacFile.Equals("managed.pac", StringComparison.OrdinalIgnoreCase))
+                {
+                    _pacTemplateStatusKey = "已生成并更新 Windows PAC 系统代理。浏览器可能需要重新发起请求以应用规则。";
+                    PacTemplateStatusLabel.Text = L(_pacTemplateStatusKey);
+                    RefreshPacFiles();
+                }
+                UpdateConnectionBanner(true);
             }
-            else if (_settings.ProxyMode == "Global")
+            finally
             {
-                _systemProxyApplied = true; // Set first so a partial WinINET write can be rolled back.
-                _proxy.EnableGlobal(_settings.HttpPort, _settings.SocksPort);
+                if (stagedConfigPath is not null)
+                    try { File.Delete(stagedConfigPath); }
+                    catch (IOException) { /* Never fail a successful connection due to staging cleanup. */ }
             }
-            // Manual: no registry writes and no PAC URL are applied.
-            _runningProxyMode = _settings.ProxyMode;
-            _runningConfigSnapshot = configJson;
-            _runningConfigProfileId = _selected?.Id;
-            _runningExternalFilePath = _settings.CustomConfigPath;
-            SetRunningConnection(true, launchedProfiles, launchedExternal);
-            StartTrafficMonitoring(trafficPort);
-
-            if (_settings.ProxyMode == "PAC" &&
-                _settings.SelectedPacFile.Equals("managed.pac", StringComparison.OrdinalIgnoreCase))
-            {
-                _pacTemplateStatusKey = "已生成并更新 Windows PAC 系统代理。浏览器可能需要重新发起请求以应用规则。";
-                PacTemplateStatusLabel.Text = L(_pacTemplateStatusKey);
-                RefreshPacFiles();
-            }
-            UpdateConnectionBanner(true);
         }
         catch
         {
-            await StopCoreAndProxyAsync();
-
-            UpdateConnectionBanner(false);
+            // A mode-only restart prevalidates while the old core is alive.
+            // If validation failed, do not tear down that working connection.
+            if (!modeOnlyRestart || oldCoreWasStopped)
+            {
+                await StopCoreAndProxyAsync();
+                UpdateConnectionBanner(false);
+            }
+            else
+            {
+                UpdateConnectionBanner(true);
+            }
             throw;
         }
         finally { _expectedShutdown = false; _connectionGate.Release(); }
@@ -1597,6 +1769,9 @@ public partial class MainPage : ContentPage
 
     private async Task DisconnectAsync()
     {
+        Interlocked.Increment(ref _connectionRevision);
+        _resumeRecoveryCancellation?.Cancel();
+        _suspendedConnection = null;
         await _connectionGate.WaitAsync();
         try
         {
@@ -1619,6 +1794,7 @@ public partial class MainPage : ContentPage
             _runningHttpPort = 0;
             _runningSocksPort = 0;
             _runningPacPort = 0;
+            _runningPacProxyPort = 0;
             // Log persistence is handled by RuntimeLogStore's periodic 60-second
             // threshold check. Disconnect must not force a disk write. Users can
             // explicitly export logs when they need a partial batch saved.
@@ -1638,6 +1814,160 @@ public partial class MainPage : ContentPage
     }
 
 
+    private ResumeContext? CaptureRunningConnectionForResume()
+    {
+        if (!_core.IsRunning || _core.RunningConfigPath is not { } config ||
+            _core.RunningConfigFormat is not { } format ||
+            _core.RunningExecutablePath is not { } executable) return null;
+        return new ResumeContext(
+            Interlocked.Read(ref _connectionRevision), executable, config, format,
+            _runningProxyMode, _runningHttpPort, _runningSocksPort, _runningPacPort,
+            _runningPacProxyPort, _runningTrafficApiPort, _pac.CurrentScriptPath, _runningConfigSnapshot,
+            _runningConfigProfileId, _runningExternalFilePath, _runningExternalConfig,
+            _activeProfileIds.ToArray(), _activeProfileNames.ToArray());
+    }
+
+    /// <summary>Called on the UI thread when Windows announces an impending sleep.</summary>
+    public void NotifySystemSuspending()
+    {
+        if (!_initialized || _logsDisposed) return;
+        _resumeRecoveryCancellation?.Cancel();
+        _suspendedConnection = CaptureRunningConnectionForResume();
+    }
+
+    /// <summary>
+    /// An automatic or manual wake may be raised multiple times. Debounce it and
+    /// recover only a proxy that was running before the suspend. Never auto-connect
+    /// an intentionally disconnected app.
+    /// </summary>
+    public void NotifySystemResumed()
+    {
+        if (!_initialized || _logsDisposed) return;
+        var context = _suspendedConnection ?? CaptureRunningConnectionForResume();
+        if (context is null) return;
+        _resumeRecoveryCancellation?.Cancel();
+        var cancellation = new CancellationTokenSource();
+        _resumeRecoveryCancellation = cancellation;
+        _ = RecoverAfterResumeAsync(context, cancellation);
+    }
+
+    private async Task RecoverAfterResumeAsync(ResumeContext context, CancellationTokenSource cancellation)
+    {
+        var token = cancellation.Token;
+        try
+        {
+            // Windows can report resume before Wi-Fi, Ethernet, DNS and VPN finish reconnecting.
+            await Task.Delay(TimeSpan.FromSeconds(4), token);
+            var deadline = DateTimeOffset.UtcNow.AddSeconds(60);
+            while (!NetworkInterface.GetIsNetworkAvailable() && DateTimeOffset.UtcNow < deadline)
+                await Task.Delay(TimeSpan.FromSeconds(2), token);
+            token.ThrowIfCancellationRequested();
+            if (!NetworkInterface.GetIsNetworkAvailable())
+            {
+                AppendLog("Resume recovery deferred: Windows network is still unavailable. Reconnect manually if needed.");
+                return;
+            }
+            await Task.Delay(TimeSpan.FromSeconds(2), token); // let OS routes / DNS settle
+            await _connectionGate.WaitAsync(token);
+            try
+            {
+                // A manual connect/disconnect or mode change while waking always wins.
+                if (token.IsCancellationRequested || _logsDisposed ||
+                    context.Revision != Interlocked.Read(ref _connectionRevision)) return;
+                if (!File.Exists(context.ConfigPath) || !File.Exists(context.Executable))
+                {
+                    AppendLog("Resume recovery skipped: original core executable or active config snapshot is missing.");
+                    return;
+                }
+
+                AppendLog("Windows resumed: rebuilding the previous proxy connection without applying pending edits.");
+                _expectedShutdown = true;
+                try
+                {
+                    StopTrafficMonitoring();
+                    await _core.StopAsync();
+                    token.ThrowIfCancellationRequested();
+                    await _core.StartAsync(context.Executable, context.ConfigPath, context.Format, token);
+                    await WaitForLocalHttpAsync(context.HttpPort);
+                    await WaitForLocalHttpAsync(context.SocksPort);
+                    if (context.ProxyMode == "PAC" && !_pac.IsRunning)
+                        _pac.Start(context.PacPort, context.PacProxyPort, context.PacFilePath);
+
+                    // Refresh WinINET only if the stored values are still ours.
+                    // Never override proxy or VPN settings a user changed during sleep.
+                    if (context.ProxyMode != "Manual")
+                    {
+                        if (_systemProxyApplied)
+                        {
+                            if (!_proxy.RefreshIfOwned())
+                                AppendLog("Resume: Windows proxy settings were changed externally; VelaRay did not overwrite them.");
+                        }
+                        else if (context.ProxyMode == "PAC")
+                        {
+                            _systemProxyApplied = true;
+                            _proxy.EnablePac(context.PacPort);
+                        }
+                        else
+                        {
+                            _systemProxyApplied = true;
+                            _proxy.EnableGlobal(context.HttpPort, context.SocksPort);
+                        }
+                    }
+
+                    _runningProxyMode = context.ProxyMode;
+                    _runningHttpPort = context.HttpPort;
+                    _runningSocksPort = context.SocksPort;
+                    _runningPacPort = context.PacPort;
+                    _runningPacProxyPort = context.PacProxyPort;
+                    _runningConfigSnapshot = context.ConfigSnapshot;
+                    _runningConfigProfileId = context.ProfileId;
+                    _runningExternalFilePath = context.ExternalFilePath;
+                    var activeProfiles = _settings.Profiles.Where(p =>
+                        context.ActiveProfileIds.Contains(p.Id, StringComparer.Ordinal)).ToArray();
+                    SetRunningConnection(true, activeProfiles, context.ExternalConfig);
+                    // Preserve original running names even if an editable profile was renamed.
+                    _activeProfileIds.Clear();
+                    _activeProfileNames.Clear();
+                    foreach (var id in context.ActiveProfileIds) _activeProfileIds.Add(id);
+                    _activeProfileNames.AddRange(context.ActiveProfileNames);
+                    SynchronizeRunningIndicators();
+                    _tray.SetStatus(true, RunningServerLabel);
+                    UpdateConnectionBanner(true);
+                    StartTrafficMonitoring(context.StatsPort);
+                    AppendLog("Proxy restored after Windows resume.");
+                }
+                catch (Exception ex)
+                {
+                    AppendLog("Resume recovery failed: " + ex.Message);
+                    try { await _core.StopAsync(); } catch { }
+                    TryRestoreProxy();
+                    _pac.Stop();
+                    SetRunningConnection(false);
+                    UpdateConnectionBanner(false);
+                }
+                finally { _expectedShutdown = false; }
+            }
+            finally { _connectionGate.Release(); }
+        }
+        catch (OperationCanceledException) when (token.IsCancellationRequested) { }
+        catch (Exception ex) { AppendLog("Resume recovery error: " + ex.Message); }
+        finally
+        {
+            if (ReferenceEquals(_resumeRecoveryCancellation, cancellation))
+            {
+                _resumeRecoveryCancellation = null;
+                _suspendedConnection = null;
+            }
+            cancellation.Dispose();
+        }
+    }
+
+    public void CancelResumeRecovery()
+    {
+        _resumeRecoveryCancellation?.Cancel();
+        _suspendedConnection = null;
+    }
+
     private void StartTrafficMonitoring(int statsPort)
     {
         StopTrafficMonitoring();
@@ -1646,7 +1976,7 @@ public partial class MainPage : ContentPage
         UpdateTrafficLabels();
         if (statsPort == 0) return;
         var cancellation = new CancellationTokenSource();
-        var executable = CoreExecutable; // Snapshot the launched core, not a later editor setting.
+        var executable = _core.RunningExecutablePath ?? CoreExecutable; // Use the real running executable, not an unsaved editor change.
         _trafficCancellation = cancellation;
         _ = PollTrafficAsync(cancellation, statsPort, executable);
     }
@@ -1753,7 +2083,11 @@ public partial class MainPage : ContentPage
         RefreshSmartUnmatchedVisibility();
         var mode = CurrentRouteMode;
         // Both labels describe the choice in Proxy settings, not the preview selection.
-        RouteModeReadOnlyLabel.Text = (RoutingModePicker.SelectedItem as LocalizedChoice)?.Label ?? mode;
+        // In Global the selected route remains saved for PAC/Manual, while the
+        // running V2Fly configuration is forced to ProxyAll on reconnect.
+        var selectedRouteLabel = (RoutingModePicker.SelectedItem as LocalizedChoice)?.Label ?? mode;
+        RouteModeReadOnlyLabel.Text = CurrentProxyMode == "Global"
+            ? $"Global → ProxyAll ({selectedRouteLabel})" : selectedRouteLabel;
         SmartFallbackReadOnlyLabel.Text = (SmartFallbackPicker.SelectedItem as LocalizedChoice)?.Label
             ?? _settings.SmartUnmatchedRoute;
         BuiltInRoutePreview.IsVisible = true;
@@ -2208,10 +2542,21 @@ public partial class MainPage : ContentPage
     private void RefreshPacFiles()
     {
         Directory.CreateDirectory(_store.PacDirectory);
-        if (!File.Exists(_store.PacFilePath)) File.WriteAllText(_store.PacFilePath, PacHttpServer.DefaultScript(_settings.HttpPort));
+        if (!File.Exists(_store.PacFilePath))
+        {
+            File.WriteAllText(_store.PacFilePath, PacHttpServer.DefaultScript(_settings.PacProxyPort));
+        }
+        else if (_settings.PacProxyPort != _settings.HttpPort &&
+                 string.Equals(File.ReadAllText(_store.PacFilePath),
+                     PacHttpServer.DefaultScript(_settings.HttpPort), StringComparison.Ordinal))
+        {
+            // Migrate only the untouched stock default PAC. Never rewrite a
+            // user-edited PAC script, which may intentionally use other ports.
+            File.WriteAllText(_store.PacFilePath, PacHttpServer.DefaultScript(_settings.PacProxyPort));
+        }
         var managed = Path.Combine(_store.PacDirectory, "managed.pac");
         if (!File.Exists(managed)) File.WriteAllText(managed, PacTemplateGenerator.Generate(SmartRoutingPolicy.EffectiveManagedPacTemplate(_settings),
-            _settings.PacDirectWebsites, _settings.PacProxyWebsites, _settings.HttpPort));
+            _settings.PacDirectWebsites, _settings.PacProxyWebsites, _settings.PacProxyPort));
         var names = Directory.GetFiles(_store.PacDirectory).Where(f => f.EndsWith(".pac", StringComparison.OrdinalIgnoreCase) || f.EndsWith(".js", StringComparison.OrdinalIgnoreCase))
             .Select(Path.GetFileName).Where(x => x != null).OrderBy(x => x).ToArray();
         if (!names.Contains(_settings.SelectedPacFile, StringComparer.OrdinalIgnoreCase)) _settings.SelectedPacFile = "managed.pac";
@@ -2224,7 +2569,7 @@ public partial class MainPage : ContentPage
     private void LoadPacFile()
     {
         PacNameEntry.Text = _settings.SelectedPacFile;
-        PacScriptEditor.Text = File.Exists(SelectedPacPath) ? File.ReadAllText(SelectedPacPath) : PacHttpServer.DefaultScript(_settings.HttpPort);
+        PacScriptEditor.Text = File.Exists(SelectedPacPath) ? File.ReadAllText(SelectedPacPath) : PacHttpServer.DefaultScript(_settings.PacProxyPort);
     }
     private void PacPickerChanged(object sender, EventArgs e)
     {
@@ -2239,7 +2584,7 @@ public partial class MainPage : ContentPage
             var name = SafePacName(PacNameEntry.Text?.Trim() ?? "");
             var path = Path.Combine(_store.PacDirectory, name);
             if (File.Exists(path)) throw new IOException("已存在同名 PAC 文件。");
-            await File.WriteAllTextAsync(path, PacHttpServer.DefaultScript(_settings.HttpPort));
+            await File.WriteAllTextAsync(path, PacHttpServer.DefaultScript(_settings.PacProxyPort));
             _settings.SelectedPacFile = name;
             await _store.SaveAsync(_settings);
             RefreshPacFiles();
@@ -2285,7 +2630,8 @@ public partial class MainPage : ContentPage
         CapturePacTemplateOptions();
         return PacTemplateGenerator.Generate(SmartRoutingPolicy.EffectiveManagedPacTemplate(_settings),
             _settings.PacDirectWebsites, _settings.PacProxyWebsites,
-            _core.IsRunning && _runningHttpPort > 0 ? _runningHttpPort : Port(HttpPortEntry.Text, "HTTP"));
+            _core.IsRunning && _runningPacProxyPort > 0
+                ? _runningPacProxyPort : Port(PacProxyPortEntry.Text, "PAC proxy HTTP"));
     }
 
     private async Task WriteManagedPacAsync()
@@ -2364,6 +2710,25 @@ public partial class MainPage : ContentPage
         RefreshLogView();
     }
 
+    private async void FileLoggingToggled(object sender, ToggledEventArgs e)
+    {
+        if (_loading || !_initialized) return;
+        // Apply to the bounded writer immediately, no restart / core configuration change.
+        // The model setting is persisted independently from other unsaved form values.
+        try
+        {
+            _runtimeLogs.SetFileLoggingEnabled(e.Value);
+            _settings.EnableFileLogging = e.Value;
+            ExportLogButton.IsEnabled = e.Value;
+            await _store.SaveAsync(_settings);
+        }
+        catch (Exception ex)
+        {
+            AppendLog("Unable to save file logging preference: " + ex.Message);
+            await AlertAsync("无法保存日志设置", ex);
+        }
+    }
+
     private async void ExportLogClicked(object sender, EventArgs e)
     {
         await RunSafelyAsync(() =>
@@ -2415,6 +2780,7 @@ public partial class MainPage : ContentPage
 
     public void DisposeLogging()
     {
+        CancelResumeRecovery();
         StopTrafficMonitoring();
         _logsDisposed = true;
         _core.LogReceived -= AppendLog;
